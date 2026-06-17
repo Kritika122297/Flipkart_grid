@@ -1,0 +1,754 @@
+"""
+tabs/tab_data.py — Data upload, cleaning report, and full EDA module.
+
+Sections
+--------
+1. Upload / Landing  — file uploader + feature highlights
+2. Cleaning Report   — cards showing what was dropped and why
+3. EDA (inner tabs)
+   a. 📋 Summary      — shape, memory, dtypes, column info table
+   b. 🔍 Data Quality — missing-value heatmap, null %, duplicates, dtype pie
+   c. 📈 Statistics   — descriptive stats, correlation matrix, skew/kurtosis
+   d. 📊 Visualize    — interactive histogram, boxplot, scatter
+"""
+
+import os
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from data.loader import load_and_process_data
+from charts.utils import style_fig, ACCENT_SEQ, PLOTLY_TEMPLATE, CHART_BG
+
+# Columns meaningful for numerical EDA (exclude raw IDs and list columns)
+_EDA_NUM_COLS = [
+    "hour", "num_violations", "violation_severity",
+    "vehicle_size_score", "time_factor", "cis",
+    "latitude", "longitude", "is_rush_hour", "is_weekend",
+    "near_junction", "junction_factor",
+]
+
+def _hashable(df: pd.DataFrame) -> pd.DataFrame:
+    """Return df with list-valued columns dropped (they are unhashable)."""
+    list_cols = [c for c in df.columns
+                 if df[c].apply(lambda x: isinstance(x, list)).any()]
+    return df.drop(columns=list_cols, errors="ignore")
+
+
+# Columns shown in the raw data preview
+_PREVIEW_COLS = [
+    "created_datetime", "police_station", "location",
+    "vehicle_type", "violation_type", "latitude", "longitude",
+    "violation_severity", "cis",
+]
+
+
+# ════════════════════════════════════════════════════════════════════
+# PUBLIC ENTRY POINT
+# ════════════════════════════════════════════════════════════════════
+
+def render(df: pd.DataFrame | None, stats: dict | None) -> None:
+    if df is None:
+        _show_upload_landing()
+        return
+
+    _success_banner(stats)
+
+    with st.expander("🔄 Load a different CSV file"):
+        _upload_widget()
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    _cleaning_report(stats)
+    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    _eda_section(df)
+
+
+# ════════════════════════════════════════════════════════════════════
+# UPLOAD HELPERS
+# ════════════════════════════════════════════════════════════════════
+
+def _show_upload_landing() -> None:
+    st.markdown(
+        "<p class='section-header'>📂 Load Your Dataset</p>"
+        "<p class='section-sub'>Upload the BTP parking violation CSV to unlock the full dashboard</p>",
+        unsafe_allow_html=True,
+    )
+    features = [
+        ("🧹", "Auto Cleaning",
+         "Bad timestamps & out-of-bounds coordinates removed automatically"),
+        ("📊", "Full EDA",
+         "Missing values, distributions, correlations, and statistics generated instantly"),
+        ("🚀", "Full Dashboard",
+         "All 5 analysis tabs unlock once data is loaded"),
+    ]
+    for col, (icon, title, desc) in zip(st.columns(3), features):
+        col.markdown(
+            f"""<div class='glass-panel' style='text-align:center; padding:28px 16px;'>
+                <div style='font-size:2rem; margin-bottom:10px;'>{icon}</div>
+                <div style='color:#E8E8E8; font-weight:700; margin-bottom:6px;'>{title}</div>
+                <div style='color:#666; font-size:0.83rem;'>{desc}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    _upload_widget()
+
+
+def _on_file_uploaded() -> None:
+    """on_change callback — runs before the next script rerun, so no st.rerun() needed."""
+    uploaded = st.session_state.get("_file_uploader_widget")
+    if uploaded is None:
+        return
+    upload_key = f"{uploaded.name}_{uploaded.size}"
+    if st.session_state.get("_processed_upload") == upload_key:
+        return
+    tmp_path = os.path.join(os.path.dirname(__file__), "..", "data", "_uploaded_data.csv")
+    with open(tmp_path, "wb") as fh:
+        fh.write(uploaded.getbuffer())
+    try:
+        df, stats = load_and_process_data(tmp_path)
+        st.session_state.df = df
+        st.session_state.stats = stats
+        st.session_state["_processed_upload"] = upload_key
+    except Exception as exc:
+        st.session_state["_upload_error"] = str(exc)
+
+
+def _upload_widget() -> None:
+    st.file_uploader(
+        "Drop your BTP violation CSV here",
+        type=["csv"],
+        key="_file_uploader_widget",
+        on_change=_on_file_uploaded,
+        help="Expected columns: id, police_station, location, vehicle_type, "
+             "violation_type, junction_name, latitude, longitude, created_datetime",
+    )
+    err = st.session_state.pop("_upload_error", None)
+    if err:
+        st.error(f"Error processing file: {err}")
+
+
+# ════════════════════════════════════════════════════════════════════
+# SUCCESS BANNER
+# ════════════════════════════════════════════════════════════════════
+
+def _success_banner(stats: dict) -> None:
+    st.markdown(
+        f"""<div style='background:linear-gradient(135deg,rgba(0,210,100,0.12),rgba(0,210,255,0.08));
+                        border:1px solid rgba(0,210,100,0.3); border-radius:14px;
+                        padding:16px 24px; margin-bottom:20px;
+                        display:flex; align-items:center; gap:14px;'>
+            <span style='font-size:1.8rem;'>✅</span>
+            <div>
+                <div style='color:#00D264; font-weight:700; font-size:1rem;'>
+                    Dataset loaded successfully
+                </div>
+                <div style='color:#666; font-size:0.82rem;'>
+                    {stats["final_rows"]:,} clean records &nbsp;·&nbsp;
+                    {stats["date_min"]} → {stats["date_max"]}
+                </div>
+            </div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
+# ════════════════════════════════════════════════════════════════════
+# CLEANING REPORT
+# ════════════════════════════════════════════════════════════════════
+
+def _cleaning_report(stats: dict) -> None:
+    st.markdown(
+        "<p class='section-header'>🧹 Data Cleaning Report</p>"
+        "<p class='section-sub'>Steps applied automatically before any analysis</p>",
+        unsafe_allow_html=True,
+    )
+    retention = stats["final_rows"] / stats["raw_rows"] * 100
+    c1, c2, c3, c4 = st.columns(4)
+    _kpi_card(c1, "Raw Rows Ingested",   f'{stats["raw_rows"]:,}',              "From uploaded CSV",           "kpi-card")
+    _kpi_card(c2, "Clean Rows Kept",     f'{stats["final_rows"]:,}',            f'{retention:.1f}% retention', "savings-card")
+    _kpi_card(c3, "Bad Datetime Dropped",f'{stats["dropped_bad_datetime"]:,}',  "Unparseable timestamps",      "impact-card")
+    _kpi_card(c4, "Out-of-Bounds Coords",f'{stats["dropped_invalid_coords"]:,}',"Outside Bengaluru metro",     "impact-card")
+
+
+def _kpi_card(col, label: str, value: str, sub: str, css_class: str) -> None:
+    col.markdown(
+        f"""<div class='{css_class}'>
+            <div class='kpi-label'>{label}</div>
+            <div class='kpi-value'>{value}</div>
+            <div class='kpi-sub'>{sub}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
+# ════════════════════════════════════════════════════════════════════
+# EDA SECTION  (inner tabs)
+# ════════════════════════════════════════════════════════════════════
+
+def _eda_section(df: pd.DataFrame) -> None:
+    st.markdown(
+        "<p class='section-header'>📊 Exploratory Data Analysis</p>"
+        "<p class='section-sub'>Auto-generated deep-dive into your dataset</p>",
+        unsafe_allow_html=True,
+    )
+    t1, t2, t3, t4 = st.tabs([
+        "📋 Summary",
+        "🔍 Data Quality",
+        "📈 Statistics",
+        "📊 Visualize",
+    ])
+    with t1:
+        _render_summary(df)
+    with t2:
+        _render_quality(df)
+    with t3:
+        _render_statistics(df)
+    with t4:
+        _render_visualizations(df)
+
+
+# ────────────────────────────────────────────────────────────────────
+# TAB 1 — SUMMARY
+# ────────────────────────────────────────────────────────────────────
+
+def _render_summary(df: pd.DataFrame) -> None:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    # ── Top metric cards ──
+    total_missing = int(df.isnull().sum().sum())
+    missing_pct   = total_missing / (df.shape[0] * df.shape[1]) * 100
+    duplicates    = int(_hashable(df).duplicated().sum())
+    mem_mb        = df.memory_usage(deep=True).sum() / 1024 ** 2
+
+    cols = st.columns(5)
+    _metric_card(cols[0], "Rows",           f"{df.shape[0]:,}",       "#6C63FF")
+    _metric_card(cols[1], "Columns",        f"{df.shape[1]}",          "#00D2FF")
+    _metric_card(cols[2], "Missing Cells",  f"{total_missing:,}",      "#FF4B4B")
+    _metric_card(cols[3], "Duplicate Rows", f"{duplicates:,}",         "#FFD93D")
+    _metric_card(cols[4], "Memory Usage",   f"{mem_mb:.1f} MB",        "#6BCB77")
+
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+
+    # ── Missing % banner ──
+    color = "#FF4B4B" if missing_pct > 10 else "#FFD93D" if missing_pct > 2 else "#00D264"
+    st.markdown(
+        f"""<div style='background:rgba(30,33,48,0.55); border:1px solid rgba(108,99,255,0.12);
+                        border-radius:12px; padding:14px 20px; margin-bottom:20px;
+                        display:flex; align-items:center; gap:10px;'>
+            <span style='color:{color}; font-size:1.2rem; font-weight:800;'>{missing_pct:.2f}%</span>
+            <span style='color:#888; font-size:0.87rem;'>
+                of all cells contain missing values
+                ({total_missing:,} / {df.shape[0] * df.shape[1]:,} cells)
+            </span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    # ── Column info table ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem; margin-bottom:8px;'>"
+        "Column Overview</p>",
+        unsafe_allow_html=True,
+    )
+    col_info = _build_column_info(df)
+    st.dataframe(col_info, use_container_width=True, height=420)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── Data preview ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem; margin-bottom:8px;'>"
+        "Raw Data Preview (first 100 rows)</p>",
+        unsafe_allow_html=True,
+    )
+    show = [c for c in _PREVIEW_COLS if c in df.columns]
+    st.dataframe(df[show].head(100), use_container_width=True, height=320)
+
+
+def _metric_card(col, label: str, value: str, color: str) -> None:
+    col.markdown(
+        f"""<div style='background:rgba(30,33,48,0.6);
+                        border:1px solid {color}33;
+                        border-top:3px solid {color};
+                        border-radius:12px; padding:18px 14px; text-align:center;'>
+            <div style='font-size:0.75rem; font-weight:600; color:#888;
+                        text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;'>
+                {label}
+            </div>
+            <div style='font-size:1.55rem; font-weight:800; color:{color};'>
+                {value}
+            </div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
+@st.cache_data
+def _build_column_info(_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for col in _df.columns:
+        series = _df[col]
+        non_null = int(series.notna().sum())
+        null_cnt = int(series.isna().sum())
+        null_pct = round(null_cnt / len(_df) * 100, 2)
+        try:
+            unique = int(series.nunique())
+        except TypeError:
+            unique = None  # list-valued column — Arrow needs uniform type
+        rows.append({
+            "Column": col,
+            "Dtype": str(series.dtype),
+            "Non-Null": non_null,
+            "Null Count": null_cnt,
+            "Null %": null_pct,
+            "Unique Values": unique,
+        })
+    return pd.DataFrame(rows)
+
+
+# ────────────────────────────────────────────────────────────────────
+# TAB 2 — DATA QUALITY
+# ────────────────────────────────────────────────────────────────────
+
+def _render_quality(df: pd.DataFrame) -> None:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    # ── Null % bar chart + Missing pattern heatmap ──
+    q1, q2 = st.columns(2)
+    with q1:
+        _null_bar_chart(df)
+    with q2:
+        _missing_heatmap(df)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── Duplicate rows ──
+    dup_count = int(_hashable(df).duplicated().sum())
+    dup_color = "#FF4B4B" if dup_count > 0 else "#00D264"
+    dup_icon  = "⚠️" if dup_count > 0 else "✅"
+    st.markdown(
+        f"""<div style='background:rgba(30,33,48,0.55); border:1px solid rgba(108,99,255,0.12);
+                        border-radius:12px; padding:16px 22px; margin-bottom:20px;'>
+            <span style='font-size:1.1rem;'>{dup_icon}</span>
+            <span style='color:{dup_color}; font-weight:700; margin-left:8px;'>
+                {dup_count:,} duplicate rows detected
+            </span>
+            <span style='color:#666; font-size:0.85rem; margin-left:10px;'>
+                ({dup_count / len(df) * 100:.3f}% of dataset)
+            </span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    # ── Dtype distribution ──
+    d1, d2 = st.columns(2)
+    with d1:
+        _dtype_pie(df)
+    with d2:
+        _completeness_chart(df)
+
+
+def _null_bar_chart(df: pd.DataFrame) -> None:
+    null_series = df.isnull().mean() * 100
+    null_series = null_series[null_series > 0].sort_values(ascending=True)
+
+    if null_series.empty:
+        st.markdown(
+            "<div class='glass-panel' style='text-align:center; padding:50px;'>"
+            "<div style='font-size:2rem;'>✅</div>"
+            "<div style='color:#00D264; font-weight:600; margin-top:10px;'>"
+            "No missing values across all columns</div></div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    colors = [
+        "#FF4B4B" if v > 20 else "#FFD93D" if v > 5 else "#6C63FF"
+        for v in null_series.values
+    ]
+    fig = go.Figure(go.Bar(
+        x=null_series.values,
+        y=null_series.index,
+        orientation="h",
+        marker=dict(color=colors, line=dict(width=0)),
+        text=[f"{v:.1f}%" for v in null_series.values],
+        textposition="outside",
+        textfont=dict(size=10, color="#aaa"),
+    ))
+    fig.update_layout(
+        title=dict(text="Null % by Column", font=dict(size=14, color="#ddd")),
+        xaxis=dict(title="Missing %", range=[0, null_series.max() * 1.35]),
+        yaxis_title=None,
+    )
+    style_fig(fig, 360)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _missing_heatmap(df: pd.DataFrame) -> None:
+    # Sample 300 rows for a readable pattern heatmap
+    sample = df.sample(min(300, len(df)), random_state=42)
+    raw_cols = [c for c in _PREVIEW_COLS if c in sample.columns]
+    matrix = sample[raw_cols].isnull().astype(int)
+
+    fig = go.Figure(go.Heatmap(
+        z=matrix.values.T,
+        x=[f"Row {i}" for i in range(len(matrix))],
+        y=raw_cols,
+        colorscale=[[0, "rgba(108,99,255,0.08)"], [1, "#FF4B4B"]],
+        showscale=False,
+        hovertemplate="Column: %{y}<br>Missing: %{z}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=dict(text="Missing Pattern (300-row sample)", font=dict(size=14, color="#ddd")),
+        xaxis=dict(showticklabels=False, title="Sampled Rows"),
+        yaxis_title=None,
+    )
+    style_fig(fig, 360)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _dtype_pie(df: pd.DataFrame) -> None:
+    dtype_counts: dict[str, int] = {}
+    for dtype in df.dtypes:
+        key = str(dtype)
+        dtype_counts[key] = dtype_counts.get(key, 0) + 1
+
+    fig = go.Figure(go.Pie(
+        labels=list(dtype_counts.keys()),
+        values=list(dtype_counts.values()),
+        hole=0.5,
+        marker=dict(colors=ACCENT_SEQ[: len(dtype_counts)]),
+        textinfo="label+value",
+        textfont=dict(size=11, color="#ddd"),
+    ))
+    fig.update_layout(
+        title=dict(text="Column Data Types", font=dict(size=14, color="#ddd")),
+        showlegend=True,
+    )
+    style_fig(fig, 340)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _completeness_chart(df: pd.DataFrame) -> None:
+    completeness = ((1 - df.isnull().mean()) * 100).sort_values()
+    colors = [
+        "#FF4B4B" if v < 80 else "#FFD93D" if v < 95 else "#00D264"
+        for v in completeness.values
+    ]
+    fig = go.Figure(go.Bar(
+        x=completeness.values,
+        y=completeness.index,
+        orientation="h",
+        marker=dict(color=colors, line=dict(width=0)),
+        text=[f"{v:.1f}%" for v in completeness.values],
+        textposition="inside",
+        textfont=dict(size=9, color="#fff"),
+    ))
+    fig.update_layout(
+        title=dict(text="Column Completeness %", font=dict(size=14, color="#ddd")),
+        xaxis=dict(title="Completeness %", range=[0, 110]),
+        yaxis_title=None,
+    )
+    style_fig(fig, 340)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ────────────────────────────────────────────────────────────────────
+# TAB 3 — STATISTICS
+# ────────────────────────────────────────────────────────────────────
+
+def _render_statistics(df: pd.DataFrame) -> None:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    num_df = _get_num_df(df)
+
+    # ── Descriptive stats ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem; margin-bottom:8px;'>"
+        "Descriptive Statistics — Numerical Features</p>",
+        unsafe_allow_html=True,
+    )
+    desc = num_df.describe().T.round(3)
+    desc.index.name = "Feature"
+    st.dataframe(desc, use_container_width=True, height=360)
+
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+
+    # ── Skewness & Kurtosis ──
+    s1, s2 = st.columns(2)
+    with s1:
+        _skew_chart(num_df)
+    with s2:
+        _kurtosis_chart(num_df)
+
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+
+    # ── Correlation matrix ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem; margin-bottom:8px;'>"
+        "Correlation Matrix</p>",
+        unsafe_allow_html=True,
+    )
+    _correlation_heatmap(num_df)
+
+
+@st.cache_data
+def _get_num_df(_df: pd.DataFrame) -> pd.DataFrame:
+    available = [c for c in _EDA_NUM_COLS if c in _df.columns]
+    return _df[available].select_dtypes(include="number")
+
+
+def _skew_chart(num_df: pd.DataFrame) -> None:
+    skew = num_df.skew().sort_values()
+    colors = [
+        "#FF4B4B" if abs(v) > 1 else "#FFD93D" if abs(v) > 0.5 else "#6C63FF"
+        for v in skew.values
+    ]
+    fig = go.Figure(go.Bar(
+        x=skew.values,
+        y=skew.index,
+        orientation="h",
+        marker=dict(color=colors, line=dict(width=0)),
+        text=[f"{v:.2f}" for v in skew.values],
+        textposition="outside",
+        textfont=dict(size=9, color="#aaa"),
+    ))
+    fig.update_layout(
+        title=dict(text="Skewness (|>1| = highly skewed)", font=dict(size=13, color="#ddd")),
+        xaxis_title="Skewness",
+        yaxis_title=None,
+    )
+    style_fig(fig, 360)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _kurtosis_chart(num_df: pd.DataFrame) -> None:
+    kurt = num_df.kurtosis().sort_values()
+    colors = [
+        "#FF4B4B" if abs(v) > 3 else "#FFD93D" if abs(v) > 1 else "#6C63FF"
+        for v in kurt.values
+    ]
+    fig = go.Figure(go.Bar(
+        x=kurt.values,
+        y=kurt.index,
+        orientation="h",
+        marker=dict(color=colors, line=dict(width=0)),
+        text=[f"{v:.2f}" for v in kurt.values],
+        textposition="outside",
+        textfont=dict(size=9, color="#aaa"),
+    ))
+    fig.update_layout(
+        title=dict(text="Kurtosis (|>3| = heavy tails)", font=dict(size=13, color="#ddd")),
+        xaxis_title="Kurtosis",
+        yaxis_title=None,
+    )
+    style_fig(fig, 360)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+@st.cache_data
+def _compute_corr(_num_df: pd.DataFrame) -> pd.DataFrame:
+    return _num_df.corr().round(2)
+
+
+def _correlation_heatmap(num_df: pd.DataFrame) -> None:
+    corr = _compute_corr(num_df)
+    cols = list(corr.columns)
+
+    fig = go.Figure(go.Heatmap(
+        z=corr.values,
+        x=cols,
+        y=cols,
+        colorscale=[
+            [0.0,  "#FF4B4B"],
+            [0.25, "#FF9944"],
+            [0.5,  "#1a1a2e"],
+            [0.75, "#6C63FF"],
+            [1.0,  "#00D2FF"],
+        ],
+        zmin=-1, zmax=1,
+        text=corr.values.round(2),
+        texttemplate="%{text}",
+        textfont=dict(size=9, color="#ddd"),
+        hovertemplate="%{y} × %{x}: <b>%{z}</b><extra></extra>",
+        colorbar=dict(title="r", tickfont=dict(color="#888")),
+    ))
+    fig.update_layout(
+        title=dict(text="Pearson Correlation Matrix", font=dict(size=14, color="#ddd")),
+        xaxis=dict(tickangle=-40),
+        yaxis_title=None,
+    )
+    style_fig(fig, 480)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ────────────────────────────────────────────────────────────────────
+# TAB 4 — VISUALIZATIONS
+# ────────────────────────────────────────────────────────────────────
+
+def _render_visualizations(df: pd.DataFrame) -> None:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    num_df = _get_num_df(df)
+    num_cols = list(num_df.columns)
+
+    # ── Histogram ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem;'>Distribution — Histogram</p>",
+        unsafe_allow_html=True,
+    )
+    h1, h2 = st.columns([1, 3])
+    with h1:
+        hist_col = st.selectbox("Feature", num_cols, index=num_cols.index("cis") if "cis" in num_cols else 0, key="hist_col")
+        n_bins   = st.slider("Bins", 10, 100, 40, key="hist_bins")
+    with h2:
+        _histogram(num_df, hist_col, n_bins)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── Boxplot ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem;'>Spread & Outliers — Box Plot</p>",
+        unsafe_allow_html=True,
+    )
+    b1, b2 = st.columns([1, 3])
+    with b1:
+        box_col = st.selectbox("Feature", num_cols, index=num_cols.index("violation_severity") if "violation_severity" in num_cols else 0, key="box_col")
+    with b2:
+        _boxplot(num_df, box_col)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── Scatter ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem;'>Relationship — Scatter Plot</p>",
+        unsafe_allow_html=True,
+    )
+    sc1, sc2, sc3 = st.columns([1, 1, 3])
+    default_x = num_cols.index("cis") if "cis" in num_cols else 0
+    default_y = num_cols.index("violation_severity") if "violation_severity" in num_cols else 1
+    with sc1:
+        x_col = st.selectbox("X axis", num_cols, index=default_x, key="sc_x")
+    with sc2:
+        y_col = st.selectbox("Y axis", num_cols, index=default_y, key="sc_y")
+    with sc3:
+        _scatter(num_df, x_col, y_col)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ── Multi-feature boxplot ──
+    st.markdown(
+        "<p style='color:#888; font-weight:600; font-size:0.9rem;'>All Features — Side-by-Side Box Plots</p>",
+        unsafe_allow_html=True,
+    )
+    _multi_boxplot(num_df)
+
+
+def _histogram(num_df: pd.DataFrame, col: str, bins: int) -> None:
+    data = num_df[col].dropna()
+    counts, edges = np.histogram(data, bins=bins)
+    mids = (edges[:-1] + edges[1:]) / 2
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=mids,
+        y=counts,
+        marker=dict(
+            color=counts,
+            colorscale=[[0, "#3a2a6e"], [0.5, "#6C63FF"], [1, "#00D2FF"]],
+            line=dict(width=0),
+        ),
+        hovertemplate="Value: %{x:.2f}<br>Count: %{y:,}<extra></extra>",
+    ))
+    # mean / median lines
+    fig.add_vline(x=float(data.mean()),   line=dict(color="#FF4B4B", dash="dash", width=1.5),
+                  annotation_text="mean",   annotation_font=dict(color="#FF4B4B", size=10))
+    fig.add_vline(x=float(data.median()), line=dict(color="#FFD93D", dash="dot",  width=1.5),
+                  annotation_text="median", annotation_font=dict(color="#FFD93D", size=10))
+    fig.update_layout(
+        title=dict(text=f"Distribution of {col}", font=dict(size=14, color="#ddd")),
+        xaxis_title=col,
+        yaxis_title="Frequency",
+        bargap=0.02,
+    )
+    style_fig(fig, 380)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _boxplot(num_df: pd.DataFrame, col: str) -> None:
+    data = num_df[col].dropna()
+    fig = go.Figure(go.Box(
+        y=data,
+        name=col,
+        marker=dict(color="#6C63FF", size=3, opacity=0.4),
+        line=dict(color="#00D2FF"),
+        fillcolor="rgba(108,99,255,0.15)",
+        boxmean="sd",
+        hoverinfo="y",
+    ))
+    fig.update_layout(
+        title=dict(text=f"Box Plot — {col}", font=dict(size=14, color="#ddd")),
+        yaxis_title=col,
+        showlegend=False,
+    )
+    style_fig(fig, 380)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _scatter(num_df: pd.DataFrame, x_col: str, y_col: str) -> None:
+    # Sample 5k points for speed
+    sample = num_df[[x_col, y_col]].dropna().sample(min(5000, len(num_df)), random_state=42)
+    corr_val = sample[x_col].corr(sample[y_col])
+
+    fig = go.Figure(go.Scatter(
+        x=sample[x_col],
+        y=sample[y_col],
+        mode="markers",
+        marker=dict(
+            color=sample[x_col],
+            colorscale=[[0, "#3a2a6e"], [0.5, "#6C63FF"], [1, "#00D2FF"]],
+            size=4,
+            opacity=0.55,
+            line=dict(width=0),
+        ),
+        hovertemplate=f"{x_col}: %{{x:.2f}}<br>{y_col}: %{{y:.2f}}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=dict(
+            text=f"{x_col} vs {y_col}  (r = {corr_val:.3f})",
+            font=dict(size=14, color="#ddd"),
+        ),
+        xaxis_title=x_col,
+        yaxis_title=y_col,
+    )
+    style_fig(fig, 380)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _multi_boxplot(num_df: pd.DataFrame) -> None:
+    cols_to_show = [c for c in num_df.columns if c not in ("latitude", "longitude")][:8]
+    fig = go.Figure()
+    fill_palette = [
+        "rgba(108,99,255,0.12)", "rgba(0,210,255,0.12)", "rgba(124,77,255,0.12)",
+        "rgba(255,107,107,0.12)", "rgba(255,217,61,0.12)", "rgba(107,203,119,0.12)",
+        "rgba(77,150,255,0.12)", "rgba(255,107,157,0.12)",
+    ]
+    for i, col in enumerate(cols_to_show):
+        data = num_df[col].dropna()
+        color = ACCENT_SEQ[i % len(ACCENT_SEQ)]
+        fig.add_trace(go.Box(
+            y=data,
+            name=col,
+            marker=dict(color=color, size=2, opacity=0.3),
+            line=dict(color=color),
+            fillcolor=fill_palette[i % len(fill_palette)],
+            boxmean=True,
+        ))
+    fig.update_layout(
+        title=dict(text="Feature Distributions — All Numerical Columns", font=dict(size=14, color="#ddd")),
+        yaxis_title="Value",
+        showlegend=False,
+    )
+    style_fig(fig, 420)
+    st.plotly_chart(fig, use_container_width=True)
