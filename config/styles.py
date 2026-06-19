@@ -190,5 +190,86 @@ div[data-testid="stDataFrame"] th {
     border-radius: 14px;
     overflow: hidden;
 }
+/* ── Centered loading overlay ── */
+div[data-testid="stSpinner"] {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: rgba(14, 17, 23, 0.72) !important;
+    backdrop-filter: blur(5px) !important;
+    -webkit-backdrop-filter: blur(5px) !important;
+    z-index: 99999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+div[data-testid="stSpinner"] > div {
+    background: rgba(22, 25, 40, 0.98) !important;
+    border: 1px solid rgba(108, 99, 255, 0.45) !important;
+    border-radius: 22px !important;
+    padding: 40px 56px !important;
+    text-align: center !important;
+    box-shadow: 0 0 0 1px rgba(108,99,255,0.1),
+                0 24px 64px rgba(0,0,0,0.65),
+                inset 0 1px 0 rgba(255,255,255,0.05) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 18px !important;
+    min-width: 240px !important;
+}
+div[data-testid="stSpinner"] p,
+div[data-testid="stSpinner"] span {
+    color: #d4d4e8 !important;
+    font-size: 1.05rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+    margin: 0 !important;
+}
+div[data-testid="stSpinner"] svg {
+    width: 52px !important;
+    height: 52px !important;
+    color: #6C63FF !important;
+}
+/* ── Info / Warning banners ── */
+.pw-info-banner {
+    background: linear-gradient(135deg, rgba(0,210,255,0.08), rgba(108,99,255,0.08));
+    border: 1px solid rgba(0, 210, 255, 0.22);
+    border-left: 4px solid #00D2FF;
+    border-radius: 10px;
+    padding: 13px 18px;
+    margin: 10px 0 16px;
+    color: #9ad8ef;
+    font-size: 0.89rem;
+    line-height: 1.55;
+}
+.pw-warn-banner {
+    background: linear-gradient(135deg, rgba(255,165,0,0.09), rgba(255,75,75,0.06));
+    border: 1px solid rgba(255, 165, 0, 0.28);
+    border-left: 4px solid #FFA500;
+    border-radius: 10px;
+    padding: 13px 18px;
+    margin: 10px 0 16px;
+    color: #ffd080;
+    font-size: 0.89rem;
+    line-height: 1.55;
+}
+.pw-empty-state {
+    text-align: center;
+    padding: 80px 24px;
+    background: rgba(30, 33, 48, 0.55);
+    border: 1px dashed rgba(108, 99, 255, 0.2);
+    border-radius: 16px;
+    margin: 16px 0;
+}
+.pw-empty-state .es-icon { font-size: 2.8rem; margin-bottom: 14px; }
+.pw-empty-state .es-title { color: #bbb; font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+.pw-empty-state .es-sub { color: #555; font-size: 0.87rem; line-height: 1.6; }
 </style>
 """, unsafe_allow_html=True)

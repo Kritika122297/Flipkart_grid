@@ -61,13 +61,17 @@ df = st.session_state.df
 stats = st.session_state.stats
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-_NO_DATA_MSG = (
-    "<div class='glass-panel' style='text-align:center; padding:60px 20px;'>"
-    "<div style='font-size:2.5rem; margin-bottom:12px;'>📂</div>"
-    "<div style='color:#bbb; font-size:1.1rem; font-weight:600;'>No data loaded yet</div>"
-    "<div style='color:#666; font-size:0.88rem; margin-top:8px;'>Go to the <b style='color:#6C63FF;'>📂 Data</b> tab and upload your CSV to get started.</div>"
-    "</div>"
-)
+def _no_data_msg(tab_hint: str = "") -> None:
+    st.markdown(
+        "<div class='pw-empty-state'>"
+        "<div class='es-icon'>📂</div>"
+        "<div class='es-title'>No data loaded yet</div>"
+        "<div class='es-sub'>"
+        "Go to the <b style='color:#6C63FF;'>📂 Data</b> tab and upload your BTP violation CSV to get started."
+        + (f"<br><span style='color:#6C63FF;font-size:0.82rem;margin-top:6px;display:block;'>{tab_hint}</span>" if tab_hint else "")
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
 
 tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📂 Data",
@@ -88,49 +92,49 @@ with tab1:
     if df is not None:
         tab_overview.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab shows KPI summary cards, violation trends, and station-level metrics.")
 
 with tab2:
     if df is not None:
         tab_heatmap.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab shows an interactive CIS-weighted heatmap across Bengaluru with filter controls.")
 
 with tab3:
     if df is not None:
         tab_analytics.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab shows deep-dive analytics: time patterns, vehicle breakdowns, and CIS distributions.")
 
 with tab4:
     if df is not None:
         tab_enforcement.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab ranks police stations by enforcement priority index and recommends patrol zones.")
 
 with tab5:
     if df is not None:
         tab_impact.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab estimates economic impact and congestion cost of parking violations.")
 
 with tab6:
     if df is not None:
         tab_simulator.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab lets you simulate what-if scenarios — e.g., 30% fewer violations in Koramangala.")
 
 with tab7:
     if df is not None:
         tab_emergency.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab calculates how parking violations affect ambulance response times to hospitals.")
 
 with tab8:
     if df is not None:
         tab_timelapse.render(df)
     else:
-        st.markdown(_NO_DATA_MSG, unsafe_allow_html=True)
+        _no_data_msg("This tab animates 24-hour violation density patterns across the city.")
 
 # ── Footer ───────────────────────────────────────────────────────────
 st.markdown(

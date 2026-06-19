@@ -10,6 +10,14 @@ def render(df):
         "— combining congestion impact, volume, and severity</p>",
         unsafe_allow_html=True,
     )
+    st.markdown(
+        "<div class='pw-info-banner'>"
+        "ℹ️ EPI combines total CIS, violation count, and avg severity — "
+        "higher score = more urgent need for enforcement. "
+        "Use the table to identify top-priority patrol zones."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     enf = enforcement_table(df)
     top20 = enf.head(20).copy()

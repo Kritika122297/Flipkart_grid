@@ -9,6 +9,13 @@ def render(df):
         "<p class='section-sub'>Temporal patterns and violation type breakdown</p>",
         unsafe_allow_html=True,
     )
+    st.markdown(
+        "<div class='pw-info-banner'>"
+        "ℹ️ Charts update automatically based on your uploaded data. "
+        "Hover over any chart for exact values — click legend items to show/hide series."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     a1, a2 = st.columns(2)
     with a1:

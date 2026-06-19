@@ -470,6 +470,14 @@ def render(df: pd.DataFrame) -> None:
         "</p></div>",
         unsafe_allow_html=True,
     )
+    st.markdown(
+        "<div class='pw-info-banner'>"
+        "ℹ️ <b>How to use:</b> Adjust the sliders to simulate enforcement scenarios — "
+        "e.g., reduce violations in Koramangala by 40%. "
+        "The projections update instantly to show estimated congestion and revenue impact."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     # Pre-compute station EPI table (cached)
     station_df = compute_epi(df)

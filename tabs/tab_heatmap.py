@@ -618,25 +618,37 @@ def render(df):
     _render_stats_bar(filtered_df)
     st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
 
+    # ── Info banner ────────────────────────────────────────────────────────────
+    st.markdown(
+        "<div class='pw-info-banner'>"
+        "ℹ️ <b>How to use:</b> Choose your Map Style (Dark / Light / Street) and Map Layer "
+        "(Heatmap / Scatter / Both) in the filters above, then click "
+        "<b>Apply Filters</b> to refresh the map. "
+        "Click any marker or heat-point for violation details."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
     # ── Section 3: Map ─────────────────────────────────────────────────────────
     try:
         from streamlit_folium import st_folium
     except ImportError:
-        st.warning(
-            "Install folium and streamlit-folium to render the map:\n\n"
-            "`pip install folium streamlit-folium`"
+        st.markdown(
+            "<div class='pw-warn-banner'>⚠️ Map libraries not installed. "
+            "Run: <code>pip install folium streamlit-folium</code></div>",
+            unsafe_allow_html=True,
         )
         return
 
     if filtered_df.empty:
         st.markdown(
-            "<div style='text-align:center;padding:80px 20px;"
-            "background:rgba(30,33,48,0.65);border-radius:14px;"
-            "border:1px solid rgba(108,99,255,0.15);'>"
-            "<div style='font-size:2rem;'>\U0001f5fa️</div>"
-            "<div style='color:#888;margin-top:10px;font-size:1rem;'>"
-            "No records match the selected filters.</div>"
-            "</div>",
+            "<div class='pw-empty-state'>"
+            "<div class='es-icon'>🗺️</div>"
+            "<div class='es-title'>No violations match your filters</div>"
+            "<div class='es-sub'>"
+            "Try widening the time range, clearing station/vehicle filters, "
+            "or switching from <b>High Impact Only</b> to <b>All Violations</b>."
+            "</div></div>",
             unsafe_allow_html=True,
         )
     else:
