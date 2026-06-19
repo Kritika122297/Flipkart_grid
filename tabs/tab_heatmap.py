@@ -237,9 +237,24 @@ def _layer_heatmap(m, heat_df):
             gradient=_HEAT_GRADIENT, min_opacity=0.3).add_to(m)
 
 
-def _layer_scatter(m, scatter_df):
+_MAP_TILES = {
+    "Dark":   "CartoDB dark_matter",
+    "Light":  "CartoDB positron",
+    "Street": "OpenStreetMap",
+}
+
+# Popup colors per style (bg, heading_color, text_color, border_color)
+_POPUP_STYLE = {
+    "Dark":   ("#1a1a2e", "#6C63FF", "#ccc",  "rgba(108,99,255,0.3)"),
+    "Light":  ("#ffffff", "#4C46CC", "#333",  "rgba(108,99,255,0.25)"),
+    "Street": ("#f5f5f5", "#4C46CC", "#222",  "rgba(108,99,255,0.2)"),
+}
+
+
+def _layer_scatter(m, scatter_df, map_style: str = "Dark"):
     import folium
 
+    bg, hd, tx, bd = _POPUP_STYLE[map_style]
     valid = scatter_df.dropna(subset=["latitude", "longitude", "cis"])
     top = valid.nlargest(_MAX_SCATTER_PTS, "cis")
 
@@ -259,19 +274,19 @@ def _layer_scatter(m, scatter_df):
             viol_str = _safe(str(r.get("violation_type", "N/A")), 70)
 
         popup_html = (
-            "<div style='font-family:Inter,sans-serif;min-width:220px;"
-            "background:#1a1a2e;border-radius:8px;padding:12px;'>"
-            "<div style='color:#6C63FF;font-size:12px;font-weight:700;"
-            "border-bottom:1px solid rgba(108,99,255,0.3);padding-bottom:6px;margin-bottom:8px;'>"
-            "Violation Detail</div>"
-            f"<div style='color:#ccc;font-size:11px;line-height:1.85;'>"
+            f"<div style='font-family:Inter,sans-serif;min-width:220px;"
+            f"background:{bg};border-radius:8px;padding:12px;'>"
+            f"<div style='color:{hd};font-size:12px;font-weight:700;"
+            f"border-bottom:1px solid {bd};padding-bottom:6px;margin-bottom:8px;'>"
+            f"Violation Detail</div>"
+            f"<div style='color:{tx};font-size:11px;line-height:1.85;'>"
             f"<b>Location:</b> {loc}<br>"
             f"<b>Vehicle:</b> {vtype}<br>"
             f"<b>CIS Score:</b> <span style='color:{color};font-weight:700;'>{cis:.1f}/100</span><br>"
             f"<b>Offence:</b> {viol_str}<br>"
             f"<b>Station:</b> {stn}<br>"
             f"<b>Time:</b> {ts}"
-            "</div></div>"
+            f"</div></div>"
         )
 
         folium.CircleMarker(
@@ -286,8 +301,10 @@ def _layer_scatter(m, scatter_df):
         ).add_to(m)
 
 
-def _layer_enforcement(m, epi_df):
+def _layer_enforcement(m, epi_df, map_style: str = "Dark"):
     import folium
+
+    bg, hd, tx, bd = _POPUP_STYLE[map_style]
 
     for rank, (_, row) in enumerate(epi_df.iterrows(), 1):
         if pd.isna(row["lat"]) or pd.isna(row["lon"]):
@@ -295,16 +312,16 @@ def _layer_enforcement(m, epi_df):
 
         stn = _safe(str(row["police_station"]), 50)
         popup_html = (
-            "<div style='font-family:Inter,sans-serif;min-width:210px;"
-            "background:#1a1a2e;border-radius:8px;padding:12px;'>"
-            f"<div style='color:#6C63FF;font-size:13px;font-weight:800;margin-bottom:8px;'>"
+            f"<div style='font-family:Inter,sans-serif;min-width:210px;"
+            f"background:{bg};border-radius:8px;padding:12px;'>"
+            f"<div style='color:{hd};font-size:13px;font-weight:800;margin-bottom:8px;'>"
             f"#{rank} Enforcement Priority</div>"
-            f"<div style='color:#ccc;font-size:11px;line-height:1.9;'>"
+            f"<div style='color:{tx};font-size:11px;line-height:1.9;'>"
             f"<b>Station:</b> {stn}<br>"
-            f"<b>EPI Score:</b> <span style='color:#6C63FF;font-weight:700;'>{row['epi']:.1f}</span>/100<br>"
+            f"<b>EPI Score:</b> <span style='color:{hd};font-weight:700;'>{row['epi']:.1f}</span>/100<br>"
             f"<b>Violations:</b> {int(row['violation_count']):,}<br>"
             f"<b>Avg CIS:</b> {row['avg_cis']:.1f}"
-            "</div></div>"
+            f"</div></div>"
         )
 
         icon_html = (
@@ -324,16 +341,19 @@ def _layer_enforcement(m, epi_df):
         ).add_to(m)
 
 
-def _layer_landmarks(m):
+def _layer_landmarks(m, map_style: str = "Dark"):
     import folium
+
+    lm_bg    = "rgba(108,99,255,0.85)"  if map_style == "Dark"  else "rgba(76,70,204,0.9)"
+    lm_color = "white"
 
     for lm in _LANDMARKS:
         html = (
-            f'<div style="font-size:11px;color:white;'
-            f'background:rgba(108,99,255,0.8);'
+            f'<div style="font-size:11px;color:{lm_color};'
+            f'background:{lm_bg};'
             f'padding:2px 8px;border-radius:4px;'
             f'white-space:nowrap;font-weight:600;'
-            f'box-shadow:0 2px 6px rgba(0,0,0,0.4);">'
+            f'box-shadow:0 2px 6px rgba(0,0,0,0.35);">'
             f'{lm["icon"]} {lm["name"]}</div>'
         )
         folium.Marker(
@@ -344,13 +364,13 @@ def _layer_landmarks(m):
         ).add_to(m)
 
 
-def _build_map(filtered_df, epi_df, map_layer):
+def _build_map(filtered_df, epi_df, map_layer, map_style: str = "Dark"):
     import folium
 
     m = folium.Map(
         location=_BGLR_CENTER,
         zoom_start=12,
-        tiles="CartoDB dark_matter",
+        tiles=_MAP_TILES[map_style],
         control_scale=True,
     )
 
@@ -358,10 +378,10 @@ def _build_map(filtered_df, epi_df, map_layer):
         _layer_heatmap(m, filtered_df)
 
     if map_layer in ("Scatter Points", "Both"):
-        _layer_scatter(m, filtered_df)
+        _layer_scatter(m, filtered_df, map_style)
 
-    _layer_enforcement(m, epi_df)  # always shown
-    _layer_landmarks(m)             # always shown
+    _layer_enforcement(m, epi_df, map_style)
+    _layer_landmarks(m, map_style)
 
     return m
 
@@ -574,6 +594,12 @@ def render(df):
                     ["Heatmap", "Scatter Points", "Both"],
                     key="hmap_f_layer",
                 )
+                map_style = st.radio(
+                    "Map Style",
+                    ["Dark", "Light", "Street"],
+                    key="hmap_f_style",
+                    help="Dark = CartoDB dark matter · Light = CartoDB positron · Street = OpenStreetMap",
+                )
 
             st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
             st.form_submit_button(
@@ -620,7 +646,7 @@ def render(df):
         )
 
         with st.spinner("\U0001f5fa️ Rendering map…"):
-            m = _build_map(filtered_df, epi_df, map_layer)
+            m = _build_map(filtered_df, epi_df, map_layer, map_style)
             st_folium(m, width=None, height=580, returned_objects=[])
 
     _render_legend()
