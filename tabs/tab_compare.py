@@ -1,7 +1,6 @@
 """
 tabs/tab_compare.py  —  Before / After comparison: upload two CSVs, see delta metrics
 """
-import io
 import os
 import tempfile
 
@@ -52,7 +51,10 @@ def _hourly_avg(_df: pd.DataFrame):
 
 @st.cache_data(show_spinner=False)
 def _vtype_counts(_df: pd.DataFrame):
-    return _df["vehicle_type"].value_counts().head(8).reset_index()
+    vc = _df["vehicle_type"].value_counts().head(8).reset_index()
+    # Normalise column names across pandas versions
+    vc.columns = ["vehicle_type", "count"]
+    return vc
 
 
 # ══════════════════════════════════════════════════════════════════════════════

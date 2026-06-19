@@ -12,6 +12,7 @@ Sections
    d. 📊 Visualize    — interactive histogram, boxplot, scatter
 """
 
+import io
 import os
 import streamlit as st
 import pandas as pd
@@ -314,31 +315,30 @@ def _render_export(df: pd.DataFrame) -> None:
 
         with col_xl:
             st.markdown("**Excel — Full Analysis Report**")
-            st.caption("Generates a multi-sheet workbook: summary, top hotspots, "
-                       "enforcement rankings, and hourly patterns.")
-            if st.button("🗂️ Generate Report", use_container_width=True, key="exp_xl_btn"):
-                try:
-                    buf = _build_excel_report(df)
-                    st.download_button(
-                        "⬇️ Download Excel Report",
-                        data=buf,
-                        file_name="parkwatch_report.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="exp_xl_dl",
-                    )
-                except Exception as e:
-                    st.markdown(
-                        f"<div class='pw-warn-banner'>⚠️ Could not generate Excel — "
-                        f"install openpyxl: <code>pip install openpyxl</code><br>"
-                        f"<small style='color:#888;'>({e})</small></div>",
-                        unsafe_allow_html=True,
-                    )
+            st.caption("5-sheet workbook: summary stats, top hotspots, "
+                       "enforcement rankings, hourly pattern, raw data (5k rows).")
+            try:
+                xl_buf = _build_excel_report(df)  # cached — fast on repeat renders
+                st.download_button(
+                    "⬇️ Download Excel Report",
+                    data=xl_buf,
+                    file_name="parkwatch_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="exp_xl_dl",
+                )
+            except Exception as e:
+                st.markdown(
+                    f"<div class='pw-warn-banner'>⚠️ Excel export requires openpyxl: "
+                    f"<code>pip install openpyxl</code><br>"
+                    f"<small style='color:#666;'>{e}</small></div>",
+                    unsafe_allow_html=True,
+                )
 
 
-def _build_excel_report(df: pd.DataFrame) -> bytes:
-    import io as _io
-
+@st.cache_data(show_spinner=False)
+def _build_excel_report(_df: pd.DataFrame) -> bytes:
+    df = _df  # alias — _df skips hashing, df used internally
     safe_df = df.drop(
         columns=[c for c in df.columns
                  if df[c].apply(lambda x: isinstance(x, list)).any()],
@@ -401,7 +401,7 @@ def _build_excel_report(df: pd.DataFrame) -> bytes:
         )
         hourly["avg_cis"] = hourly["avg_cis"].round(1)
 
-    buf = _io.BytesIO()
+    buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         summary.to_excel(writer,    sheet_name="Summary",    index=False)
         if not hotspots.empty:

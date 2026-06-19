@@ -3,15 +3,29 @@ import pandas as pd
 import plotly.graph_objects as go
 from collections import Counter
 
+# Slate design system — synced with config/styles.py CSS variables
 GRADIENT_COLORS = [
-    "#6C63FF", "#7C6FFF", "#8B7BFF", "#9B87FF", "#AA93FF",
-    "#B9A0FF", "#C5ADFF", "#00D2FF", "#00BFFF", "#00AAFF",
-    "#0095FF", "#0080FF", "#006BFF", "#0056FF", "#0041FF",
+    "#818CF8", "#7B80F0", "#7574E8", "#8B6FE0", "#A78BFA",
+    "#38BDF8", "#2DB8F5", "#22AEF0", "#60A5FA", "#34D399",
+    "#FBBF24", "#F87171", "#C084FC", "#22D3EE", "#6EE7B7",
 ]
-ACCENT_SEQ = ["#6C63FF", "#00D2FF", "#7C4DFF", "#FF6B6B", "#FFD93D",
-              "#6BCB77", "#4D96FF", "#FF6B9D", "#C084FC", "#22D3EE"]
+ACCENT_SEQ = [
+    "#818CF8",  # indigo
+    "#38BDF8",  # sky
+    "#A78BFA",  # purple
+    "#F87171",  # red
+    "#FBBF24",  # amber
+    "#34D399",  # green
+    "#60A5FA",  # blue
+    "#F472B6",  # pink
+    "#C084FC",  # violet
+    "#22D3EE",  # cyan
+]
 PLOTLY_TEMPLATE = "plotly_dark"
-CHART_BG = "rgba(0,0,0,0)"
+CHART_BG        = "rgba(0,0,0,0)"
+_GRID_COLOR     = "rgba(99,102,241,0.08)"
+_AXIS_COLOR     = "#475569"
+_FONT_COLOR     = "#94A3B8"
 
 
 def style_fig(fig, height=420):
@@ -19,12 +33,25 @@ def style_fig(fig, height=420):
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=CHART_BG,
         plot_bgcolor=CHART_BG,
-        font=dict(family="Inter", color="#bbb"),
+        font=dict(family="Inter", color=_FONT_COLOR, size=11),
         margin=dict(l=20, r=20, t=50, b=20),
         height=height,
         legend=dict(
             bgcolor="rgba(0,0,0,0)",
-            font=dict(size=11, color="#aaa"),
+            font=dict(size=11, color=_FONT_COLOR),
+            bordercolor="rgba(0,0,0,0)",
+        ),
+        xaxis=dict(
+            gridcolor=_GRID_COLOR,
+            color=_AXIS_COLOR,
+            linecolor="rgba(0,0,0,0)",
+            tickfont=dict(color=_AXIS_COLOR),
+        ),
+        yaxis=dict(
+            gridcolor=_GRID_COLOR,
+            color=_AXIS_COLOR,
+            linecolor="rgba(0,0,0,0)",
+            tickfont=dict(color=_AXIS_COLOR),
         ),
     )
     return fig

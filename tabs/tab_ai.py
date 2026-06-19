@@ -3,7 +3,6 @@ tabs/tab_ai.py  —  AI Insights: RandomForest hotspot prediction + z-score anom
 """
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
 
 from charts.utils import ACCENT_SEQ, PLOTLY_TEMPLATE, CHART_BG
@@ -66,7 +65,6 @@ def _train_model(_df: pd.DataFrame):
     return rf, avail, imp, round(float(auc), 3)
 
 
-@st.cache_data(show_spinner=False)
 def _predict_day(_model, feats: list, dow: int, _df: pd.DataFrame):
     is_weekend = 1 if dow >= 5 else 0
 

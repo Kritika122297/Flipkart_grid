@@ -20,11 +20,11 @@ _TOP_VIOL_N = 6
 _HIGH_IMPACT_CIS = 50.0
 
 _HEAT_GRADIENT = {
-    0.2: "#3B82F6",
-    0.4: "#10B981",
-    0.6: "#F59E0B",
-    0.8: "#EF4444",
-    1.0: "#7C3AED",
+    0.2: "#38BDF8",   # sky    — low
+    0.4: "#34D399",   # green  — moderate
+    0.6: "#FBBF24",   # amber  — high
+    0.8: "#F87171",   # red    — very high
+    1.0: "#A78BFA",   # purple — critical
 }
 
 _LANDMARKS = [
@@ -47,55 +47,7 @@ _LANDMARKS = [
 #  CSS
 # ══════════════════════════════════════════════════════════════════════════════
 
-_CSS = """<style>
-.stat-pill {
-    background: rgba(30,33,48,0.65);
-    border: 1px solid rgba(108,99,255,0.15);
-    border-radius: 14px;
-    backdrop-filter: blur(12px);
-    padding: 18px 14px 14px;
-    text-align: center;
-    margin-bottom: 6px;
-}
-.stat-pill .sp-icon { font-size: 1.25rem; }
-.stat-pill .sp-label {
-    color: #888; font-size: 0.71rem;
-    letter-spacing: .07em; text-transform: uppercase; margin: 4px 0 2px;
-}
-.stat-pill .sp-val {
-    font-size: 1.55rem; font-weight: 800;
-    background: linear-gradient(90deg, #6C63FF, #00D2FF);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-}
-.hmap-section-hd {
-    color: #aaa; font-size: 0.77rem; font-weight: 700;
-    letter-spacing: .09em; text-transform: uppercase; margin: 22px 0 10px;
-}
-.hotspot-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 9px 13px; margin-bottom: 7px;
-    background: rgba(30,33,48,0.65);
-    border: 1px solid rgba(108,99,255,0.15);
-    border-radius: 10px;
-    backdrop-filter: blur(12px);
-}
-.hs-rank {
-    min-width: 26px; height: 26px; line-height: 26px; text-align: center;
-    border-radius: 50%; font-size: 0.72rem; font-weight: 700;
-    background: linear-gradient(135deg, #6C63FF, #00D2FF); color: #fff;
-    flex-shrink: 0;
-}
-.hs-addr { flex: 1; color: #ccc; font-size: 0.8rem; line-height: 1.3; }
-.hs-stats { text-align: right; white-space: nowrap; flex-shrink: 0; }
-.hs-count { color: #6C63FF; font-weight: 700; font-size: 0.85rem; }
-.hs-cis   { color: #888; font-size: 0.7rem; margin-top: 2px; }
-.map-legend {
-    margin-top: 14px; padding: 10px 16px;
-    background: rgba(30,33,48,0.65);
-    border: 1px solid rgba(108,99,255,0.12);
-    border-radius: 10px; backdrop-filter: blur(12px);
-}
-</style>"""
+_CSS = ""  # classes now live in config/styles.py (injected globally)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -260,7 +212,7 @@ def _layer_scatter(m, scatter_df, map_style: str = "Dark"):
 
     for _, r in top.iterrows():
         cis = r["cis"]
-        color = "#EF4444" if cis > 66 else "#F59E0B" if cis > 33 else "#10B981"
+        color = "#F87171" if cis > 66 else "#FBBF24" if cis > 33 else "#34D399"
 
         loc   = _safe(r.get("location", "Unknown"), 60)
         vtype = _safe(r.get("vehicle_type", "N/A"), 30)
@@ -434,11 +386,11 @@ def _render_legend():
         f"<span style='color:#888;font-size:0.73rem;font-weight:700;"
         f"letter-spacing:.07em;text-transform:uppercase;'>Map Legend &nbsp;&nbsp;</span>"
         f"<span style='font-size:0.77rem;'>"
-        f"<span style='color:#3B82F6;'>&#9632;</span> Low &nbsp;"
-        f"<span style='color:#10B981;'>&#9632;</span> Moderate &nbsp;"
-        f"<span style='color:#F59E0B;'>&#9632;</span> High &nbsp;"
-        f"<span style='color:#EF4444;'>&#9632;</span> Very High &nbsp;"
-        f"<span style='color:#7C3AED;'>&#9632;</span> Critical"
+        f"<span style='color:#38BDF8;'>&#9632;</span> Low &nbsp;"
+        f"<span style='color:#34D399;'>&#9632;</span> Moderate &nbsp;"
+        f"<span style='color:#FBBF24;'>&#9632;</span> High &nbsp;"
+        f"<span style='color:#F87171;'>&#9632;</span> Very High &nbsp;"
+        f"<span style='color:#A78BFA;'>&#9632;</span> Critical"
         f"&nbsp;&nbsp;&nbsp;{rank_badge} Enforcement Zone"
         f"&nbsp;&nbsp;{lm_badge}"
         f"</span></div>",
