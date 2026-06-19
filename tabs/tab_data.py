@@ -281,6 +281,141 @@ _PREVIEW_COLS = [
 
 
 # ════════════════════════════════════════════════════════════════════
+# EXPORT / DOWNLOAD
+# ════════════════════════════════════════════════════════════════════
+
+def _render_export(df: pd.DataFrame) -> None:
+    with st.expander("📥 Export & Download", expanded=False):
+        st.markdown(
+            "<div class='pw-info-banner' style='margin-top:4px;'>ℹ️ Download the current "
+            "(possibly cleaned) dataset or a full Excel report with multiple analysis sheets."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        col_csv, col_xl = st.columns(2)
+
+        with col_csv:
+            st.markdown("**CSV — Current Dataset**")
+            st.caption("Downloads the active dataset (after any cleaning steps applied).")
+            csv_bytes = df.drop(
+                columns=[c for c in df.columns
+                         if df[c].apply(lambda x: isinstance(x, list)).any()],
+                errors="ignore",
+            ).to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Download CSV",
+                data=csv_bytes,
+                file_name="parkwatch_data.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="exp_csv",
+            )
+
+        with col_xl:
+            st.markdown("**Excel — Full Analysis Report**")
+            st.caption("Generates a multi-sheet workbook: summary, top hotspots, "
+                       "enforcement rankings, and hourly patterns.")
+            if st.button("🗂️ Generate Report", use_container_width=True, key="exp_xl_btn"):
+                try:
+                    buf = _build_excel_report(df)
+                    st.download_button(
+                        "⬇️ Download Excel Report",
+                        data=buf,
+                        file_name="parkwatch_report.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="exp_xl_dl",
+                    )
+                except Exception as e:
+                    st.markdown(
+                        f"<div class='pw-warn-banner'>⚠️ Could not generate Excel — "
+                        f"install openpyxl: <code>pip install openpyxl</code><br>"
+                        f"<small style='color:#888;'>({e})</small></div>",
+                        unsafe_allow_html=True,
+                    )
+
+
+def _build_excel_report(df: pd.DataFrame) -> bytes:
+    import io as _io
+
+    safe_df = df.drop(
+        columns=[c for c in df.columns
+                 if df[c].apply(lambda x: isinstance(x, list)).any()],
+        errors="ignore",
+    )
+
+    # Sheet 1: Summary stats
+    summary = pd.DataFrame({
+        "Metric": [
+            "Total Violations", "Unique Stations", "Unique Locations",
+            "Avg CIS Score", "Median CIS Score", "High-Risk Violations (CIS>50)",
+            "Rush Hour Violations", "Weekend Violations", "Near-Junction Violations",
+        ],
+        "Value": [
+            len(df),
+            df["police_station"].nunique() if "police_station" in df.columns else "N/A",
+            df["location"].nunique()       if "location"        in df.columns else "N/A",
+            round(float(df["cis"].mean()), 2)   if "cis" in df.columns else "N/A",
+            round(float(df["cis"].median()), 2) if "cis" in df.columns else "N/A",
+            int((df["cis"] > 50).sum())         if "cis" in df.columns else "N/A",
+            int(df["is_rush_hour"].sum())  if "is_rush_hour" in df.columns else "N/A",
+            int(df["is_weekend"].sum())    if "is_weekend"   in df.columns else "N/A",
+            int(df["near_junction"].sum()) if "near_junction" in df.columns else "N/A",
+        ],
+    })
+
+    # Sheet 2: Top hotspots
+    hotspots = pd.DataFrame()
+    if "location" in df.columns and "cis" in df.columns:
+        hotspots = (
+            df.groupby("location")
+            .agg(violations=("cis", "size"), avg_cis=("cis", "mean"))
+            .reset_index()
+            .sort_values("violations", ascending=False)
+            .head(20)
+        )
+        hotspots["avg_cis"] = hotspots["avg_cis"].round(1)
+
+    # Sheet 3: Enforcement ranking
+    enforcement = pd.DataFrame()
+    if "police_station" in df.columns and "cis" in df.columns:
+        enforcement = (
+            df.groupby("police_station")
+            .agg(violations=("cis", "size"), avg_cis=("cis", "mean"),
+                 total_cis=("cis", "sum"))
+            .reset_index()
+            .sort_values("total_cis", ascending=False)
+            .head(30)
+        )
+        enforcement["avg_cis"]   = enforcement["avg_cis"].round(1)
+        enforcement["total_cis"] = enforcement["total_cis"].round(1)
+
+    # Sheet 4: Hourly pattern
+    hourly = pd.DataFrame()
+    if "hour" in df.columns and "cis" in df.columns:
+        hourly = (
+            df.groupby("hour")
+            .agg(violations=("cis", "size"), avg_cis=("cis", "mean"))
+            .reset_index()
+        )
+        hourly["avg_cis"] = hourly["avg_cis"].round(1)
+
+    buf = _io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        summary.to_excel(writer,    sheet_name="Summary",    index=False)
+        if not hotspots.empty:
+            hotspots.to_excel(writer,  sheet_name="Top Hotspots", index=False)
+        if not enforcement.empty:
+            enforcement.to_excel(writer, sheet_name="Enforcement",  index=False)
+        if not hourly.empty:
+            hourly.to_excel(writer,    sheet_name="Hourly Pattern", index=False)
+        safe_df.head(5000).to_excel(writer, sheet_name="Raw Data (5000 rows)", index=False)
+
+    return buf.getvalue()
+
+
+# ════════════════════════════════════════════════════════════════════
 # PUBLIC ENTRY POINT
 # ════════════════════════════════════════════════════════════════════
 
@@ -305,6 +440,8 @@ def render(df: pd.DataFrame | None, stats: dict | None) -> None:
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
     # EDA uses the (possibly cleaned) df from session state
     active_df = st.session_state.get("df", df)
+    _render_export(active_df)
+    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
     _eda_section(active_df)
 
 

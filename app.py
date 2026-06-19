@@ -7,7 +7,7 @@ Run: streamlit run app.py
 import os
 import streamlit as st
 from config.styles import set_page_config, inject_css
-from tabs import tab_data, tab_overview, tab_heatmap, tab_analytics, tab_enforcement, tab_impact, tab_simulator, tab_emergency, tab_timelapse
+from tabs import tab_data, tab_overview, tab_heatmap, tab_analytics, tab_enforcement, tab_impact, tab_simulator, tab_emergency, tab_timelapse, tab_ai, tab_compare
 from data.loader import load_and_process_data
 
 set_page_config()
@@ -73,7 +73,7 @@ def _no_data_msg(tab_hint: str = "") -> None:
         unsafe_allow_html=True,
     )
 
-tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "📂 Data",
     "🏠 Overview",
     "🗺️ Heatmap",
@@ -83,6 +83,8 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🎮 Simulator",
     "🚑 Emergency Impact",
     "⏳ Time-Lapse",
+    "🤖 AI Insights",
+    "📊 Compare",
 ])
 
 with tab0:
@@ -135,6 +137,15 @@ with tab8:
         tab_timelapse.render(df)
     else:
         _no_data_msg("This tab animates 24-hour violation density patterns across the city.")
+
+with tab9:
+    if df is not None:
+        tab_ai.render(df)
+    else:
+        _no_data_msg("This tab trains a RandomForest model on your data to predict high-risk hours and detect anomalies.")
+
+with tab10:
+    tab_compare.render()
 
 # ── Footer ───────────────────────────────────────────────────────────
 st.markdown(
