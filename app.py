@@ -4,10 +4,11 @@ Flipkart Gridlock Hackathon 2.0 — Round 2
 Theme: Parking-Induced Congestion in Bengaluru
 Run: streamlit run app.py
 """
+import os
 import streamlit as st
 from config.styles import set_page_config, inject_css
-from data.loader import auto_load
 from tabs import tab_data, tab_overview, tab_heatmap, tab_analytics, tab_enforcement, tab_impact, tab_simulator, tab_emergency, tab_timelapse
+from data.loader import load_and_process_data
 
 set_page_config()
 inject_css()
@@ -34,12 +35,24 @@ if "df" not in st.session_state:
     st.session_state.df = None
     st.session_state.stats = None
 
-# Try auto-loading from known paths (only if not already loaded)
-if st.session_state.df is None:
-    df, stats = auto_load()
-    if df is not None:
-        st.session_state.df = df
-        st.session_state.stats = stats
+# ── Process a pending upload (flag set by tab_data's on_change callback) ──
+# The callback deliberately does NO disk I/O (it runs in the asyncio event
+# loop thread and would block WebSocket heartbeats for a 100MB+ file write).
+# Here we run in the script thread, so blocking I/O is safe.
+if "_pending_upload_key" in st.session_state:
+    _pending_key   = st.session_state.pop("_pending_upload_key")
+    _uploaded_file = st.session_state.get("_file_uploader_widget")
+    if _uploaded_file is not None:
+        _tmp_path = os.path.join(os.path.dirname(__file__), "data", "_uploaded_data.csv")
+        with open(_tmp_path, "wb") as _fh:
+            _fh.write(_uploaded_file.getbuffer())
+        try:
+            _df, _stats = load_and_process_data(_tmp_path)
+            st.session_state.df    = _df
+            st.session_state.stats = _stats
+            st.session_state["_processed_upload"] = _pending_key
+        except Exception as _exc:
+            st.session_state["_upload_error"] = str(_exc)
 
 df = st.session_state.df
 stats = st.session_state.stats

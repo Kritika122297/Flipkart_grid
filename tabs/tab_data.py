@@ -19,7 +19,6 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from data.loader import load_and_process_data
 from charts.utils import style_fig, ACCENT_SEQ, PLOTLY_TEMPLATE, CHART_BG
 
 # Columns meaningful for numerical EDA (exclude raw IDs and list columns)
@@ -97,23 +96,17 @@ def _show_upload_landing() -> None:
 
 
 def _on_file_uploaded() -> None:
-    """on_change callback — runs before the next script rerun, so no st.rerun() needed."""
+    """on_change callback — sets ONLY a flag, zero disk I/O.
+    Callbacks run in the asyncio event loop thread; any blocking I/O here
+    prevents Tornado from sending WebSocket heartbeats and drops the connection.
+    All file writing and CSV processing is deferred to app.py's script thread."""
     uploaded = st.session_state.get("_file_uploader_widget")
     if uploaded is None:
         return
     upload_key = f"{uploaded.name}_{uploaded.size}"
     if st.session_state.get("_processed_upload") == upload_key:
         return
-    tmp_path = os.path.join(os.path.dirname(__file__), "..", "data", "_uploaded_data.csv")
-    with open(tmp_path, "wb") as fh:
-        fh.write(uploaded.getbuffer())
-    try:
-        df, stats = load_and_process_data(tmp_path)
-        st.session_state.df = df
-        st.session_state.stats = stats
-        st.session_state["_processed_upload"] = upload_key
-    except Exception as exc:
-        st.session_state["_upload_error"] = str(exc)
+    st.session_state["_pending_upload_key"] = upload_key
 
 
 def _upload_widget() -> None:
