@@ -49,8 +49,11 @@ if "_pending_upload_key" in st.session_state:
         try:
             _df, _stats = load_and_process_data(_tmp_path)
             st.session_state.df    = _df
+            st.session_state.raw_df = _df.copy()
             st.session_state.stats = _stats
-            st.session_state["_processed_upload"] = _pending_key
+            st.session_state["_processed_upload"]  = _pending_key
+            st.session_state["_cleaning_applied"]  = False
+            st.session_state["_cleaning_changes"]  = []
         except Exception as _exc:
             st.session_state["_upload_error"] = str(_exc)
 

@@ -36,6 +36,242 @@ def _hashable(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=list_cols, errors="ignore")
 
 
+# ── Cleaning constants ────────────────────────────────────────────────
+_PROTECTED_COLS = {
+    "cis", "hour", "day_of_week", "day_num", "month", "month_name",
+    "is_rush_hour", "is_weekend", "latitude", "longitude",
+    "created_datetime", "police_station", "violation_list",
+    "num_violations", "violation_severity", "vehicle_size_score",
+    "time_factor", "junction_factor", "near_junction",
+}
+_TEXT_COLS = ["police_station", "location", "vehicle_type", "violation_type", "junction_name"]
+
+
+@st.cache_data(show_spinner=False)
+def _baseline_stats(_df: pd.DataFrame, _key: str = "") -> dict:
+    """Compute expensive stats once per upload (cached by upload key)."""
+    h = _hashable(_df)
+    return {
+        "rows":      len(_df),
+        "cols":      _df.shape[1],
+        "nulls":     int(_df.isnull().sum().sum()),
+        "dupes":     int(h.duplicated().sum()),
+        "null_pct":  _df.isnull().mean().to_dict(),
+        "num_nulls": int(_df.select_dtypes(include="number").isnull().sum().sum()),
+        "cat_nulls": int(_df.select_dtypes(include="object").isnull().sum().sum()),
+    }
+
+
+def _apply_cleaning(df: pd.DataFrame, opts: dict) -> tuple[pd.DataFrame, list[str]]:
+    out = df.copy()
+    log = []
+
+    if opts["drop_null_cols"]:
+        thr   = opts["null_threshold"] / 100
+        drop  = [c for c, p in df.isnull().mean().items()
+                 if p > thr and c not in _PROTECTED_COLS]
+        if drop:
+            out = out.drop(columns=drop)
+            log.append(f"Dropped **{len(drop)}** column(s) with >{opts['null_threshold']}% nulls: "
+                       + ", ".join(f"`{c}`" for c in drop))
+
+    if opts["fill_numeric"]:
+        total = 0
+        for col in out.select_dtypes(include="number").columns:
+            n = int(out[col].isnull().sum())
+            if n:
+                v = out[col].median() if opts["numeric_method"] == "Median" else out[col].mean()
+                out[col] = out[col].fillna(v)
+                total += n
+        if total:
+            log.append(f"Filled **{total:,}** missing numeric values with {opts['numeric_method'].lower()}")
+
+    if opts["fill_categorical"]:
+        total = 0
+        for col in out.select_dtypes(include="object").columns:
+            n = int(out[col].isnull().sum())
+            if n:
+                modes = out[col].mode()
+                v = (modes.iloc[0] if opts["categorical_method"] == "Mode" and len(modes)
+                     else "Unknown")
+                out[col] = out[col].fillna(v)
+                total += n
+        if total:
+            log.append(f"Filled **{total:,}** missing text values with {opts['categorical_method'].lower()}")
+
+    if opts["remove_dupes"]:
+        list_cols = [c for c in out.columns if out[c].apply(lambda x: isinstance(x, list)).any()]
+        sub       = [c for c in out.columns if c not in list_cols]
+        before    = len(out)
+        out       = out.drop_duplicates(subset=sub)
+        n         = before - len(out)
+        if n:
+            log.append(f"Removed **{n:,}** duplicate rows")
+
+    if opts["standardize_text"]:
+        cols = [c for c in _TEXT_COLS if c in out.columns]
+        for c in cols:
+            out[c] = out[c].astype(str).str.strip().str.upper()
+        log.append(f"Standardized text in **{len(cols)}** column(s) (trim + UPPERCASE)")
+
+    return out, log
+
+
+def _render_cleaning_panel(df: pd.DataFrame) -> None:
+    st.markdown(
+        "<p class='section-header'>🧹 Interactive Data Cleaning</p>"
+        "<p class='section-sub'>Configure rules, preview the impact, then apply in one click</p>",
+        unsafe_allow_html=True,
+    )
+
+    upload_key = st.session_state.get("_processed_upload", "")
+    base       = _baseline_stats(df, upload_key)
+    is_applied = st.session_state.get("_cleaning_applied", False)
+
+    # ── Applied state ─────────────────────────────────────────────────
+    if is_applied:
+        changes    = st.session_state.get("_cleaning_changes", [])
+        clean_base = _baseline_stats(st.session_state.df,
+                                     upload_key + "_cleaned")
+        st.markdown(
+            f"""<div style="background:linear-gradient(135deg,rgba(0,210,100,0.12),
+            rgba(0,210,255,0.08)); border:1px solid rgba(0,210,100,0.3);
+            border-radius:14px; padding:18px 24px; margin-bottom:16px;">
+              <div style="color:#00D264; font-weight:700; font-size:1rem; margin-bottom:10px;">
+                ✅ Cleaning applied — {len(changes)} step(s) completed
+              </div>
+              {"".join(f"<div style='color:#aaa;font-size:0.87rem;margin-top:5px;'>• {c}</div>" for c in changes)}
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Rows",    f"{clean_base['rows']:,}",
+                  delta=f"{clean_base['rows'] - base['rows']:,}", delta_color="inverse")
+        c2.metric("Columns", f"{clean_base['cols']:,}",
+                  delta=f"{clean_base['cols'] - base['cols']:,}", delta_color="inverse")
+        c3.metric("Nulls",   f"{clean_base['nulls']:,}",
+                  delta=f"{clean_base['nulls'] - base['nulls']:,}", delta_color="inverse")
+        c4.metric("Dupes",   f"{clean_base['dupes']:,}",
+                  delta=f"{clean_base['dupes'] - base['dupes']:,}", delta_color="inverse")
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Reset to Original Data", key="_cl_reset"):
+            st.session_state.df = st.session_state.get("raw_df", df)
+            st.session_state._cleaning_applied = False
+            st.session_state._cleaning_changes = []
+        return
+
+    # ── Controls + live preview ───────────────────────────────────────
+    left, right = st.columns([1, 1], gap="large")
+
+    with left:
+        st.markdown("#### ⚙️ Cleaning Steps")
+
+        drop_null   = st.checkbox("Drop high-null columns",            value=True,  key="_cl_drop")
+        null_thr    = st.slider("Null % threshold", 10, 90, 50, 5,    key="_cl_thr",
+                                help="Drop columns where null% exceeds this value",
+                                disabled=not drop_null)
+
+        fill_num    = st.checkbox("Fill missing numeric values",        value=True,  key="_cl_num")
+        num_method  = st.radio("Numeric fill", ["Median", "Mean"],
+                               horizontal=True, key="_cl_nmeth", disabled=not fill_num)
+
+        fill_cat    = st.checkbox("Fill missing text/category values",  value=True,  key="_cl_cat")
+        cat_method  = st.radio("Text fill", ["Mode", "Unknown"],
+                               horizontal=True, key="_cl_cmeth", disabled=not fill_cat)
+
+        rm_dupes    = st.checkbox("Remove duplicate rows",              value=True,  key="_cl_dup")
+        std_text    = st.checkbox("Standardize text (trim + UPPERCASE)",value=False, key="_cl_std")
+
+    opts = {
+        "drop_null_cols":     drop_null,
+        "null_threshold":     null_thr,
+        "fill_numeric":       fill_num,
+        "numeric_method":     num_method,
+        "fill_categorical":   fill_cat,
+        "categorical_method": cat_method,
+        "remove_dupes":       rm_dupes,
+        "standardize_text":   std_text,
+    }
+
+    # ── Fast preview (uses cached baseline, no full df copy) ──────────
+    with right:
+        st.markdown("#### 📊 Impact Preview")
+
+        est_rows  = base["rows"]
+        est_cols  = base["cols"]
+        est_nulls = base["nulls"]
+        est_dupes = base["dupes"]
+        will_do   = []
+
+        if drop_null:
+            thr       = null_thr / 100
+            drop_list = [c for c, p in base["null_pct"].items()
+                         if p > thr and c not in _PROTECTED_COLS]
+            if drop_list:
+                col_nulls  = int(sum(df[c].isnull().sum() for c in drop_list if c in df.columns))
+                est_cols  -= len(drop_list)
+                est_nulls -= col_nulls
+                will_do.append(f"Drop **{len(drop_list)}** column(s) with >{null_thr}% nulls")
+
+        if fill_num and base["num_nulls"]:
+            est_nulls -= base["num_nulls"]
+            will_do.append(f"Fill **{base['num_nulls']:,}** missing numeric values with {num_method.lower()}")
+
+        if fill_cat and base["cat_nulls"]:
+            est_nulls -= base["cat_nulls"]
+            will_do.append(f"Fill **{base['cat_nulls']:,}** missing text values with {cat_method.lower()}")
+
+        if rm_dupes and base["dupes"]:
+            est_rows  -= base["dupes"]
+            est_dupes  = 0
+            will_do.append(f"Remove **{base['dupes']:,}** duplicate rows")
+
+        if std_text:
+            n = len([c for c in _TEXT_COLS if c in df.columns])
+            will_do.append(f"Standardize text in **{n}** column(s)")
+
+        b_col, a_col = st.columns(2)
+        with b_col:
+            st.markdown("<div style='color:#888;font-size:0.78rem;font-weight:700;"
+                        "letter-spacing:1px;margin-bottom:4px;'>BEFORE</div>",
+                        unsafe_allow_html=True)
+            st.metric("Rows",    f"{base['rows']:,}")
+            st.metric("Columns", f"{base['cols']:,}")
+            st.metric("Nulls",   f"{base['nulls']:,}")
+            st.metric("Dupes",   f"{base['dupes']:,}")
+
+        with a_col:
+            st.markdown("<div style='color:#00D264;font-size:0.78rem;font-weight:700;"
+                        "letter-spacing:1px;margin-bottom:4px;'>AFTER</div>",
+                        unsafe_allow_html=True)
+            def _d(a, b): return f"{a-b:,}" if a != b else None
+            st.metric("Rows",    f"{est_rows:,}",        delta=_d(est_rows, base["rows"]),   delta_color="inverse")
+            st.metric("Columns", f"{est_cols:,}",        delta=_d(est_cols, base["cols"]),   delta_color="inverse")
+            st.metric("Nulls",   f"{max(0,est_nulls):,}",delta=_d(max(0,est_nulls), base["nulls"]), delta_color="inverse")
+            st.metric("Dupes",   f"{est_dupes:,}",       delta=_d(est_dupes, base["dupes"]), delta_color="inverse")
+
+        if will_do:
+            st.markdown(
+                "<div style='margin-top:10px;'>" +
+                "".join(f"<div style='color:#aaa;font-size:0.83rem;margin-top:5px;'>"
+                        f"✓ {s}</div>" for s in will_do) +
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("No changes with current settings.")
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    if st.button("🧹 Apply Cleaning", type="primary", key="_cl_apply"):
+        cleaned, changes = _apply_cleaning(
+            st.session_state.get("raw_df", df), opts
+        )
+        st.session_state.df = cleaned
+        st.session_state._cleaning_applied = True
+        st.session_state._cleaning_changes = changes
+
+
 # Columns shown in the raw data preview
 _PREVIEW_COLS = [
     "created_datetime", "police_station", "location",
@@ -61,7 +297,15 @@ def render(df: pd.DataFrame | None, stats: dict | None) -> None:
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
     _cleaning_report(stats)
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    _eda_section(df)
+
+    # Use raw_df as base for the cleaning panel so Reset always works
+    raw_df = st.session_state.get("raw_df", df)
+    _render_cleaning_panel(raw_df)
+
+    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    # EDA uses the (possibly cleaned) df from session state
+    active_df = st.session_state.get("df", df)
+    _eda_section(active_df)
 
 
 # ════════════════════════════════════════════════════════════════════
