@@ -96,7 +96,7 @@ _COLOURS = [
 
 
 # ── Main render ───────────────────────────────────────────────────────────────
-def render(df: pd.DataFrame | None = None):
+def render(df=None):
     st.markdown(
         "<p style='font-size:1.3rem; font-weight:700; color:#818CF8;'>🚛 OR-Tools Fleet Dispatcher</p>"
         "<p style='color:#94A3B8; margin-top:-10px;'>Mathematically optimal multi-truck patrol routing via Google OR-Tools (CVRP)</p>",
