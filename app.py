@@ -13,7 +13,7 @@ load_dotenv()
 # Gemini API key — read once from environment, never exposed in the UI
 _GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 from config.styles import set_page_config, inject_css
-from tabs import tab_data, tab_command_center, tab_congestion_analytics, tab_intelligent_dispatch, tab_tactical_commander
+from tabs import tab_data, tab_command_center, tab_congestion_analytics, tab_intelligent_dispatch, tab_tactical_commander, tab_cctv, tab_ortools_dispatch
 from data.loader import load_and_process_data
 
 set_page_config()
@@ -104,12 +104,14 @@ def no_data_state(tab_name: str, hint: str) -> None:
             st.rerun()
     st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🏠 Command Center",
     "📊 Congestion Analytics",
     "🎯 Intelligent Dispatch",
     "🤖 Tactical AI Commander",
     "📂 Data",
+    "📷 Live CCTV",
+    "🚛 OR-Tools Dispatch",
 ])
 
 # Tab 1: Command Center
@@ -155,6 +157,14 @@ with tab4:
 # Tab 5: Data (full upload, cleaning, EDA panel)
 with tab5:
     tab_data.render(df, stats)
+
+# Tab 6: Live CCTV Vision Pipeline (added by Vatsalya)
+with tab6:
+    tab_cctv.render(df)
+
+# Tab 7: OR-Tools Fleet Dispatcher (added by Vatsalya)
+with tab7:
+    tab_ortools_dispatch.render(df)
 
 # ── Footer ───────────────────────────────────────────────────────────
 st.markdown(
