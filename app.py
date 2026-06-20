@@ -20,97 +20,9 @@ set_page_config()
 inject_css()
 
 # ── Header ──────────────────────────────────────────────────────────
-st.markdown("""
-<div style='
-    padding: 28px 32px 20px;
-    margin-bottom: 8px;
-    background: linear-gradient(135deg,
-        rgba(22,27,47,0.7) 0%,
-        rgba(28,33,54,0.5) 100%);
-    border: 1px solid rgba(99,102,241,0.14);
-    border-radius: 18px;
-    backdrop-filter: blur(20px);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 16px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
-'>
-    <!-- Left: branding -->
-    <div>
-        <div style='display:flex; align-items:center; gap:12px; margin-bottom:6px;'>
-            <div style='
-                background: linear-gradient(135deg, #818CF8, #38BDF8);
-                border-radius: 12px;
-                width: 44px; height: 44px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 1.4rem;
-                box-shadow: 0 4px 14px rgba(129,140,248,0.4);
-                flex-shrink: 0;
-            '>🅿️</div>
-            <h1 style='
-                background: linear-gradient(90deg, #818CF8 0%, #38BDF8 60%, #A78BFA 100%);
-                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                font-size: 2.2rem; font-weight: 900; margin: 0;
-                letter-spacing: -0.03em; line-height: 1;
-            '>ParkWatch AI</h1>
-        </div>
-        <p style='color:#94A3B8; font-size:0.95rem; margin:0 0 4px 56px; font-weight:400;'>
-            AI-Powered Parking Enforcement &amp; Congestion Intelligence — Flipkart Gridlock Hackathon 2.0
-        </p>
-        <div style='margin-left:56px; display:flex; gap:10px; flex-wrap:wrap;'>
-            <span style='
-                background: rgba(129,140,248,0.12);
-                border: 1px solid rgba(129,140,248,0.25);
-                border-radius: 20px; padding: 2px 10px;
-                color: #818CF8; font-size: 0.72rem; font-weight: 700;
-                letter-spacing: 0.04em; text-transform: uppercase;
-            '>Flipkart Gridlock Hackathon 2.0</span>
-            <span style='
-                background: rgba(52,211,153,0.1);
-                border: 1px solid rgba(52,211,153,0.22);
-                border-radius: 20px; padding: 2px 10px;
-                color: #34D399; font-size: 0.72rem; font-weight: 700;
-                letter-spacing: 0.04em; text-transform: uppercase;
-            '>Round 2</span>
-        </div>
-    </div>
-    <!-- Right: live stat chips -->
-    <div style='display:flex; gap:10px; flex-wrap:wrap; align-items:center;'>
-        <div style='
-            background: rgba(22,27,47,0.8);
-            border: 1px solid rgba(99,102,241,0.2);
-            border-radius: 12px; padding: 10px 16px; text-align:center;
-        '>
-            <div style='color:#475569; font-size:0.64rem; text-transform:uppercase;
-            letter-spacing:.1em; font-weight:700;'>Engine</div>
-            <div style='color:#818CF8; font-size:0.88rem; font-weight:800;
-            margin-top:2px;'>RandomForest · z-score</div>
-        </div>
-        <div style='
-            background: rgba(22,27,47,0.8);
-            border: 1px solid rgba(99,102,241,0.2);
-            border-radius: 12px; padding: 10px 16px; text-align:center;
-        '>
-            <div style='color:#475569; font-size:0.64rem; text-transform:uppercase;
-            letter-spacing:.1em; font-weight:700;'>City</div>
-            <div style='color:#38BDF8; font-size:0.88rem; font-weight:800;
-            margin-top:2px;'>Bengaluru 🇮🇳</div>
-        </div>
-        <div style='
-            background: rgba(22,27,47,0.8);
-            border: 1px solid rgba(99,102,241,0.2);
-            border-radius: 12px; padding: 10px 16px; text-align:center;
-        '>
-            <div style='color:#475569; font-size:0.64rem; text-transform:uppercase;
-            letter-spacing:.1em; font-weight:700;'>Tabs</div>
-            <div style='color:#A78BFA; font-size:0.88rem; font-weight:800;
-            margin-top:2px;'>11 modules</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("## 🅿️ ParkWatch AI")
+st.caption("AI-Powered Parking Enforcement & Congestion Intelligence · Flipkart Gridlock Hackathon 2.0 · Bengaluru")
+st.divider()
 
 # ── Global chat state (persists across tab switches and reruns) ──────
 if "chat_panel_open" not in st.session_state:
@@ -177,17 +89,20 @@ with st.sidebar:
         st.info("Upload a BTP violation CSV to unlock the dashboard.")
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-def _no_data_msg(tab_hint: str = "") -> None:
-    st.markdown(
-        "<div class='pw-empty-state'>"
-        "<div class='es-icon'>📂</div>"
-        "<div class='es-title'>No data loaded yet</div>"
-        "<div class='es-sub'>"
-        "Use the <b style='color:#6C63FF;'>sidebar</b> to upload your BTP violation CSV to get started."
-        + (f"<br><span style='color:#6C63FF;font-size:0.82rem;margin-top:6px;display:block;'>{tab_hint}</span>" if tab_hint else "")
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
+def no_data_state(tab_name: str, hint: str) -> None:
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("### 📂 No data loaded")
+        st.caption(f"Upload a CSV in the sidebar to activate **{tab_name}**.")
+        st.info(hint)
+        if st.button("Load demo data instead", key=f"demo_{tab_name}"):
+            from data.loader import load_demo_data, load_and_process_data as _lap
+            _ddf, _dstats = _lap(load_demo_data())
+            st.session_state.df    = _ddf
+            st.session_state.stats = _dstats
+            st.rerun()
+    st.markdown("---")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🏠 Command Center",
@@ -197,35 +112,45 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📂 Data",
 ])
 
-# Tab 1: Command Center (Overview + Heatmap + Time-Lapse)
+# Tab 1: Command Center
 with tab1:
     if df is not None:
         tab_command_center.render(df)
     else:
-        _no_data_msg("This tab shows KPI overview, CIS-weighted heatmap, and 24-hour time-lapse animation.")
+        no_data_state(
+            "Command Center",
+            "Shows the live CIS-weighted heatmap, KPI cards, and 24-hour congestion animation.",
+        )
 
-# Tab 2: Congestion Analytics (Analytics + Impact + Emergency)
+# Tab 2: Congestion Analytics
 with tab2:
     if df is not None:
         tab_congestion_analytics.render(df)
     else:
-        _no_data_msg("This tab shows deep-dive analytics, economic cost estimates, and emergency response analysis.")
+        no_data_state(
+            "Congestion Analytics",
+            "Deep-dive analytics, economic cost estimates, and emergency response analysis.",
+        )
 
-# Tab 3: Intelligent Dispatch (Enforcement + Simulator + Compare)
+# Tab 3: Intelligent Dispatch
 with tab3:
     if df is not None:
         tab_intelligent_dispatch.render(df)
     else:
-        _no_data_msg("This tab provides EPI-ranked patrol routing, what-if simulation, and period comparison.")
+        no_data_state(
+            "Intelligent Dispatch",
+            "EPI-ranked patrol routing, what-if simulation, and period comparison.",
+        )
 
-# Tab 4: Tactical AI Commander (Gemini chat + dispatch planner + RF forecaster)
+# Tab 4: Tactical AI Commander
 with tab4:
     if df is not None:
-        tab_tactical_commander.render_chat_panel(df)
-        st.divider()
         tab_tactical_commander.render(df)
     else:
-        _no_data_msg("This tab provides AI-powered patrol advice via Gemini, tactical dispatch planning, and ML risk forecasting.")
+        no_data_state(
+            "Tactical AI Commander",
+            "AI-powered patrol advice via Gemini, dispatch planning, and ML risk forecasting.",
+        )
 
 # Tab 5: Data (full upload, cleaning, EDA panel)
 with tab5:

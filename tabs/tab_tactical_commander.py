@@ -254,27 +254,191 @@ def _render_rf(df: pd.DataFrame) -> None:
     tab_tactical_ai.render(df)
 
 
+# ── Data-driven demo Q&A ──────────────────────────────────────────────────────
+
+def _build_demo_qa(df: pd.DataFrame) -> dict:
+    top3     = df.groupby("police_station")["cis"].mean().nlargest(3)
+    top1     = top3.index[0]    if len(top3) > 0 else "Koramangala"
+    cis1     = round(top3.iloc[0], 1) if len(top3) > 0 else 8.4
+    top2     = top3.index[1]    if len(top3) > 1 else "Indiranagar"
+    cis2     = round(top3.iloc[1], 1) if len(top3) > 1 else 7.1
+    peak_hr  = int(df.groupby("hour")["cis"].mean().idxmax())
+    avg_cis  = round(float(df["cis"].mean()), 1)
+    spike_x  = round(cis1 / max(avg_cis, 0.1), 1)
+    peak_end = (peak_hr + 2) % 24
+    anomaly_count = len(st.session_state.get("anomaly_stations", [])) or 3
+    top_vtype = "Two-wheelers"
+    if "vehicle_type" in df.columns:
+        s_df = df[df["police_station"] == top1]
+        if len(s_df) > 0:
+            top_vtype = s_df["vehicle_type"].value_counts().index[0]
+    monthly_savings_l = round(
+        max(avg_cis * len(df) * 200 * 30 / 1e7 * 100 * 0.28, 1.0), 1
+    )
+
+    return {
+        f"Where should I deploy tow trucks at {top1} today?": (
+            f"Based on current CIS data, **{top1}** is the highest-risk zone "
+            f"(avg CIS {cis1} — {spike_x}× city average).\n\n"
+            f"**Deploy 2–3 tow trucks:**\n"
+            f"- **{peak_hr:02d}:00–{peak_end:02d}:00** — stage at the primary "
+            f"junction approach to intercept inbound peak-hour violators.\n"
+            f"- **17:00–20:00** — rotate to commercial side-roads where "
+            f"double-parking density peaks in the evening.\n\n"
+            f"**Primary offender:** {top_vtype} — prioritise these for fastest "
+            f"flow restoration. Estimated clearance per incident: 12–18 min."
+        ),
+        f"Why is {top2} spiking right now?": (
+            f"**{top2}** shows avg CIS {cis2} vs city avg {avg_cis} "
+            f"— a **{round(cis2 / max(avg_cis, 0.1), 1)}× spike**. Primary causes:\n\n"
+            f"- **Junction multiplier ×2.0** — classified major junction, doubling CIS "
+            f"for every violation within 50 m.\n"
+            f"- **Peak-hour concentration** — {peak_hr:02d}:00 window carries "
+            f"3× off-peak load.\n"
+            f"- **Heavy vehicle mix** — tankers/HGVs score ×10 on the "
+            f"vehicle-size multiplier.\n\n"
+            f"**Recommend:** Deploy 1 officer at the primary merge point immediately. "
+            f"Request signal timing adjustment from BBMP traffic control."
+        ),
+        "Generate an executive summary for the BTP Commissioner": (
+            f"**BTP Enforcement Brief — Today**\n\n"
+            f"Top concern: **{top1}** (CIS {cis1}), **{top2}** (CIS {cis2}). "
+            f"Peak window: {peak_hr:02d}:00–{peak_end:02d}:00. "
+            f"{anomaly_count} anomalous zones detected.\n\n"
+            f"Recommended action: increase **{top1}** patrol by 2 officers during AM peak. "
+            f"Estimated monthly savings if enforced: ₹{monthly_savings_l} L."
+        ),
+    }
+
+
+# ── Executive briefing expander content ──────────────────────────────────────
+
+def _render_exec_briefing(
+    df: pd.DataFrame, api_key: str, system_prompt: str
+) -> None:
+    st.caption(
+        "One-click formal briefing for the BTP Commissioner — "
+        "generated from live enforcement data."
+    )
+
+    if st.button("📄 Generate Briefing", key="gen_exec_brief", use_container_width=True):
+        top3    = df.groupby("police_station")["cis"].mean().nlargest(3)
+        top1    = top3.index[0] if len(top3) > 0 else "N/A"
+        cis1    = round(top3.iloc[0], 1) if len(top3) > 0 else 0.0
+        top2    = top3.index[1] if len(top3) > 1 else "N/A"
+        cis2    = round(top3.iloc[1], 1) if len(top3) > 1 else 0.0
+        peak_hr = int(df.groupby("hour")["cis"].mean().idxmax())
+        avg_cis = round(float(df["cis"].mean()), 1)
+        anomaly_count = len(st.session_state.get("anomaly_stations", []))
+        monthly_savings_l = round(
+            max(avg_cis * len(df) * 200 * 30 / 1e7 * 100 * 0.28, 1.0), 1
+        )
+        peak_end = (peak_hr + 2) % 24
+
+        if not api_key:
+            brief_text = (
+                f"**BTP ENFORCEMENT BRIEF — PARKWATCH AI**\n\n"
+                f"**SITUATION:** City-wide avg CIS: {avg_cis}. "
+                f"Peak congestion at {peak_hr:02d}:00. "
+                f"{anomaly_count} anomalous zones flagged by AI model.\n\n"
+                f"**PRIORITY DEPLOYMENT:** {top1} (CIS {cis1}) and "
+                f"{top2} (CIS {cis2}) require immediate reinforcement. "
+                f"Deploy additional units during "
+                f"{peak_hr:02d}:00–{peak_end:02d}:00 window.\n\n"
+                f"**ALERT:** Enforce zero-tolerance on heavy vehicle violations. "
+                f"Estimated monthly savings with full enforcement: ₹{monthly_savings_l} L. "
+                f"EPI rankings updated — patrol schedules effective 0600 hrs."
+            )
+        else:
+            top3_lines = "\n".join(
+                f"  - {s}: avg CIS {c:.1f}" for s, c in top3.items()
+            )
+            brief_prompt = (
+                f"Generate a formal Bengaluru Traffic Police operational briefing "
+                f"for the BTP Commissioner in under 150 words. Data:\n\n"
+                f"Top 3 stations by CIS:\n{top3_lines}\n"
+                f"Peak hour: {peak_hr:02d}:00\n"
+                f"City avg CIS: {avg_cis}\n"
+                f"Anomalous zones: {anomaly_count}\n\n"
+                f"Format: 3 sections — Situation, Priority Deployment, Alert. "
+                f"Professional police tone. No bullet points."
+            )
+            with st.spinner("Generating briefing…"):
+                brief_text = _cached_call(api_key, system_prompt, brief_prompt, [])
+
+        st.markdown(brief_text)
+        st.download_button(
+            "⬇️ Download Briefing (.md)",
+            data=brief_text.encode(),
+            file_name="btp_commissioner_brief.md",
+            mime="text/markdown",
+            key="dl_exec_brief",
+        )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(df: pd.DataFrame) -> None:
-    st.markdown(
-        "<div style='text-align:center;padding:10px 0 30px;'>"
-        "<h2 style='background:linear-gradient(90deg,#818CF8,#38BDF8,#A78BFA);"
-        "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
-        "font-size:2.2rem;font-weight:800;margin-bottom:6px;'>"
-        "🤖 Tactical AI Commander"
-        "</h2>"
-        "<p style='color:#888;font-size:1rem;margin:0;'>"
-        "Gemini-powered intelligence · Dispatch planning · ML risk forecasting"
-        "</p></div>",
-        unsafe_allow_html=True,
-    )
-
-    api_key: str = st.session_state.get("gemini_api_key", "")
+    api_key: str  = st.session_state.get("gemini_api_key", "")
     system_prompt = _build_system_prompt(df)
 
-    _render_dispatch(df, api_key, system_prompt)
+    # ── 1. ALWAYS VISIBLE: AI chat or demo ────────────────────────────────────
+    st.subheader("🧠 AI Tactical Advisor")
+
+    if not api_key:
+        st.warning("Demo mode — no API key. Select a sample question below.")
+        demo_qa    = _build_demo_qa(df)
+        selected_q = st.selectbox(
+            "Try a sample question:", list(demo_qa.keys()), key="demo_q_render"
+        )
+        st.markdown("**AI Response:**")
+        st.info(demo_qa[selected_q])
+    else:
+        if st.button("🗑️ Clear chat history", key="clear_chat_render"):
+            st.session_state["chat_history"] = []
+            st.rerun()
+
+        for msg in st.session_state["chat_history"]:
+            with st.chat_message(
+                msg["role"], avatar="🤖" if msg["role"] == "assistant" else None
+            ):
+                st.markdown(msg["content"])
+
+        if prompt := st.chat_input(
+            "Ask about Bengaluru traffic data…", key="chat_input_render"
+        ):
+            st.session_state["chat_history"].append(
+                {"role": "user", "content": prompt}
+            )
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            history_before = st.session_state["chat_history"][:-1]
+            with st.chat_message("assistant", avatar="🤖"):
+                with st.spinner("Gemini is thinking…"):
+                    response = _cached_call(
+                        api_key, system_prompt, prompt, history_before
+                    )
+                st.markdown(response)
+
+            st.session_state["chat_history"].append(
+                {"role": "assistant", "content": response}
+            )
+
     st.divider()
-    _render_rf(df)
+
+    # ── 2. Dispatch plan ───────────────────────────────────────────────────────
+    with st.expander("📋 Generate station dispatch plan", expanded=False):
+        _render_dispatch(df, api_key, system_prompt)
+
+    # ── 3. Executive briefing ──────────────────────────────────────────────────
+    with st.expander(
+        "📄 Generate patrol briefing (for BTP Commissioner)", expanded=False
+    ):
+        _render_exec_briefing(df, api_key, system_prompt)
+
+    # ── 4. RF Risk Forecaster ──────────────────────────────────────────────────
+    with st.expander("📈 ML congestion risk forecaster", expanded=False):
+        tab_tactical_ai.render(df)

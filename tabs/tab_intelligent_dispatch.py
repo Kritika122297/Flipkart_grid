@@ -718,8 +718,8 @@ def _render_enforcement(df):
         st.download_button("⬇️ Download Patrol Route (CSV)", data=route_csv,
                            file_name="patrol_route.csv", mime="text/csv", key="patrol_dl")
 
-    with st.expander("📐 **How is EPI calculated?**"):
-        st.markdown("""
+    st.markdown("#### 📐 How is EPI calculated?")
+    st.markdown("""
 **Congestion Impact Score (CIS)** per violation:
 ```
 CIS = Violation Severity × Vehicle Size × Time Factor × Junction Factor
@@ -728,12 +728,13 @@ CIS = Violation Severity × Vehicle Size × Time Factor × Junction Factor
 - **Vehicle Size**: Tanker/HGV (10) → Moped (1)
 - **Time Factor**: Peak rush hour (3.0) → Late night (0.5), weekends ×0.7
 - **Junction Factor**: Near junction (2.0) vs. no junction (1.0)
+
 **Enforcement Priority Index (EPI)** per station:
 ```
 EPI = 0.4 × Norm(Total CIS) + 0.3 × Norm(Violation Count) + 0.3 × Norm(Avg CIS)
 ```
 All scores normalized to 0–100 scale.
-        """)
+    """)
 
     # ── Section A: Patrol Hours Allocation Board ──────────────────────
     st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
@@ -1262,13 +1263,289 @@ def _render_compare() -> None:
                        mime="text/csv", key="cmp_dl")
 
 
+# ── Preset-card simulator (replaces slider UI in render) ─────────────────────
+
+def _render_simple_simulator(df: pd.DataFrame) -> None:
+    st.caption("Pick a preset scenario to see projected impact before deploying resources.")
+
+    scenario = st.radio(
+        "Scenario",
+        options=[
+            "30% fewer violations in top 3 zones",
+            "Double peak-hour patrols across all zones",
+            "Full enforcement focus on worst zone only",
+        ],
+        key="preset_scenario",
+        label_visibility="collapsed",
+    )
+
+    if st.button("▶ Run scenario", type="primary", key="run_preset_btn"):
+        station_df = compute_epi(df)
+        avg_cis    = float(df["cis"].mean())
+        total_viol = max(len(df), 1)
+
+        if scenario == "30% fewer violations in top 3 zones":
+            top3_count = int(station_df.head(3)["count"].sum())
+            top3_pct   = top3_count / total_viol
+            viol_saved = int(top3_count * 0.30)
+            cis_delta  = avg_cis * top3_pct * 0.30
+            cost_lakh  = viol_saved * 200 * 30 / 1e5
+            delay_min  = cis_delta / 100 * 8.0
+
+        elif scenario == "Double peak-hour patrols across all zones":
+            rush_col   = "is_rush_hour" if "is_rush_hour" in df.columns else None
+            rush_pct   = float(df[rush_col].mean()) if rush_col else 0.35
+            viol_saved = int(total_viol * rush_pct * 0.25)
+            cis_delta  = avg_cis * rush_pct * 0.25
+            cost_lakh  = viol_saved * 200 * 30 / 1e5
+            delay_min  = cis_delta / 100 * 8.0
+
+        else:
+            worst      = station_df.iloc[0]
+            viol_saved = int(worst["count"] * 0.70)
+            cis_delta  = float(worst["avg_cis"]) * 0.70 * (worst["count"] / total_viol)
+            cost_lakh  = viol_saved * 200 * 30 / 1e5
+            delay_min  = cis_delta / 100 * 8.0
+
+        r1, r2, r3 = st.columns(3)
+        r1.metric("CIS improvement",   f"−{cis_delta:.1f} pts")
+        r2.metric("Cost saved / month", f"₹{cost_lakh:.1f} L")
+        r3.metric("Ambulance delay",    f"−{delay_min:.1f} min")
+
+
+# ── Patrol hours + safe reduction expander content ────────────────────────────
+
+def _render_patrol_hours_expander(df: pd.DataFrame) -> None:
+    enf       = enforcement_table(df)
+    alloc_df  = enf.copy()
+    total_epi = alloc_df["epi"].sum() or 1.0
+    alloc_df["patrol_hrs"] = (alloc_df["epi"] / total_epi * 8).clip(lower=1.0).round(1)
+
+    st.caption("Daily patrol hours distributed proportionally to EPI — minimum 1 hr per station.")
+    alloc_display = alloc_df[["police_station", "epi", "patrol_hrs", "violation_count"]].copy()
+    alloc_display.columns = ["Station", "EPI Score", "Patrol Hours/Day", "Violation Count"]
+    alloc_display["EPI Score"] = alloc_display["EPI Score"].round(1)
+    st.dataframe(alloc_display, use_container_width=True, hide_index=True, height=400)
+
+    top4 = alloc_df.head(4)
+    cols = st.columns(4)
+    for col, (_, row) in zip(cols, top4.iterrows()):
+        col.metric(label=row["police_station"][:22],
+                   value=f"{row['patrol_hrs']} hrs/day",
+                   delta=f"EPI {row['epi']:.1f}")
+
+    st.markdown("#### 📉 Safe Reduction Recommendation")
+    st.caption("EPI percentile thresholds determine how safely patrol presence can be reduced per zone.")
+
+    p25 = alloc_df["epi"].quantile(0.25)
+    p50 = alloc_df["epi"].quantile(0.50)
+    p75 = alloc_df["epi"].quantile(0.75)
+
+    def _grade(epi):
+        if epi < p25: return (50, "✅ Reduce patrol")
+        if epi < p50: return (30, "⚠️ Minor reduction OK")
+        if epi < p75: return (10, "🔶 Hold current level")
+        return (0, "🚨 Increase enforcement")
+
+    alloc_df[["safe_reduction_pct", "recommendation"]] = alloc_df["epi"].apply(
+        lambda e: pd.Series(_grade(e))
+    )
+
+    _anomaly_names = {e["name"] for e in st.session_state.get("anomaly_stations", [])}
+    if _anomaly_names:
+        _amask = alloc_df["police_station"].isin(_anomaly_names)
+        alloc_df.loc[_amask, "safe_reduction_pct"] = 0
+        alloc_df.loc[_amask, "recommendation"]     = "Anomaly detected — freeze reduction"
+
+    rec_display = alloc_df[["police_station", "epi", "safe_reduction_pct", "recommendation"]].copy()
+    rec_display.columns = ["Station", "EPI Score", "Safe Reduction %", "Recommendation"]
+    rec_display["EPI Score"] = rec_display["EPI Score"].round(1)
+    st.dataframe(rec_display, use_container_width=True, hide_index=True, height=400)
+
+    cat_order  = ["✅ Reduce patrol", "⚠️ Minor reduction OK", "🔶 Hold current level", "🚨 Increase enforcement"]
+    cat_colors = ["#10B981", "#F59E0B", "#F97316", "#EF4444"]
+    cat_cnt    = alloc_df["recommendation"].value_counts()
+    y_vals     = [int(cat_cnt.get(c, 0)) for c in cat_order]
+
+    fig_rec = go.Figure(go.Bar(
+        x=cat_order, y=y_vals,
+        marker=dict(color=cat_colors, line=dict(width=0)),
+        text=y_vals, textposition="outside", textfont=dict(size=12, color="#ddd"),
+    ))
+    fig_rec.update_layout(
+        title=dict(text="Stations by Enforcement Category", font=dict(size=15, color="#ddd")),
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=300,
+        xaxis=dict(tickfont=dict(size=10, color="#aaa")),
+        yaxis=dict(title="Stations", gridcolor="rgba(255,255,255,0.05)"),
+        margin=dict(l=20, r=20, t=50, b=20), showlegend=False,
+    )
+    st.plotly_chart(fig_rec, use_container_width=True)
+
+
+# ── Enforcement effectiveness expander content ────────────────────────────────
+
+def _render_effectiveness_expander(df: pd.DataFrame) -> None:
+    st.caption(
+        "Compares average CIS in the first half of the dataset vs the second half "
+        "to measure whether enforcement activity has reduced congestion impact."
+    )
+
+    df_eff = df.sort_values("created_datetime").copy()
+    mid    = len(df_eff) // 2
+    df_bf  = df_eff.iloc[:mid]
+    df_af  = df_eff.iloc[mid:]
+
+    mean_cis_before = df_bf["cis"].mean()
+    mean_cis_after  = df_af["cis"].mean()
+    effectiveness   = (
+        (mean_cis_before - mean_cis_after) / mean_cis_before * 100
+        if mean_cis_before > 0 else 0.0
+    )
+
+    delta_label = "Congestion reduced" if effectiveness > 0 else "No improvement — review patrol allocation"
+    delta_color = "normal" if effectiveness > 0 else "inverse"
+    st.metric(label="Enforcement Effectiveness",
+              value=f"{effectiveness:.1f}%",
+              delta=delta_label, delta_color=delta_color)
+
+    daily_cis = (
+        df_eff
+        .assign(date=pd.to_datetime(df_eff["created_datetime"]).dt.date)
+        .groupby("date")["cis"].mean().reset_index()
+    )
+    daily_cis["date_str"] = daily_cis["date"].astype(str)
+    mid_idx = len(daily_cis) // 2
+
+    fig_trend = go.Figure()
+    fig_trend.add_trace(go.Scatter(
+        x=daily_cis["date_str"], y=daily_cis["cis"],
+        mode="lines+markers", line=dict(color="#6C63FF", width=2), marker=dict(size=4),
+        name="Avg CIS", hovertemplate="Date: %{x}<br>Avg CIS: %{y:.1f}<extra></extra>",
+    ))
+    fig_trend.add_vline(
+        x=mid_idx, line_dash="dash", line_color="#F59E0B",
+        annotation_text="Period split", annotation_font=dict(color="#F59E0B", size=11),
+    )
+    fig_trend.update_layout(
+        title=dict(text="CIS Trend Over Time (Before vs After Split)", font=dict(size=15, color="#ddd")),
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=320,
+        xaxis=dict(title="Date", tickangle=-30, tickfont=dict(size=9, color="#888"),
+                   gridcolor="rgba(255,255,255,0.05)"),
+        yaxis=dict(title="Avg CIS", gridcolor="rgba(255,255,255,0.05)"),
+        margin=dict(l=20, r=20, t=50, b=60), showlegend=False,
+    )
+    st.plotly_chart(fig_trend, use_container_width=True)
+
+    before_stn = df_bf.groupby("police_station")["cis"].mean().rename("cis_before")
+    after_stn  = df_af.groupby("police_station")["cis"].mean().rename("cis_after")
+    stn_eff    = pd.concat([before_stn, after_stn], axis=1).dropna()
+    stn_eff["effectiveness_pct"] = (
+        (stn_eff["cis_before"] - stn_eff["cis_after"]) / stn_eff["cis_before"] * 100
+    ).round(1)
+    stn_eff = stn_eff.sort_values("effectiveness_pct", ascending=False).reset_index()
+    stn_eff.columns = ["Station", "CIS Before", "CIS After", "Effectiveness %"]
+    stn_eff["CIS Before"] = stn_eff["CIS Before"].round(1)
+    stn_eff["CIS After"]  = stn_eff["CIS After"].round(1)
+
+    st.markdown("#### Per-Station Effectiveness")
+    st.dataframe(stn_eff, use_container_width=True, hide_index=True)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(df):
-    _render_enforcement(df)
+    # ── FIRST VISIBLE BLOCK: Patrol priority table ────────────────────────────
+    st.subheader("Patrol priority — top stations")
+
+    enf = enforcement_table(df)
+
+    alloc_df = enf.copy()
+    total_epi = alloc_df["epi"].sum() or 1.0
+    alloc_df["patrol_hrs"] = (alloc_df["epi"] / total_epi * 8).clip(lower=1.0).round(1)
+
+    p25, p50, p75 = (
+        alloc_df["epi"].quantile(0.25),
+        alloc_df["epi"].quantile(0.50),
+        alloc_df["epi"].quantile(0.75),
+    )
+
+    def _rec(epi: float) -> str:
+        if epi < p25: return "✅ Reduce patrol"
+        if epi < p50: return "⚠️ Minor reduction OK"
+        if epi < p75: return "🔶 Hold current level"
+        return "🚨 Increase enforcement"
+
+    alloc_df["recommendation"] = alloc_df["epi"].apply(_rec)
+    alloc_df.insert(0, "priority", range(1, len(alloc_df) + 1))
+
+    station_df = alloc_df[
+        ["police_station", "epi", "priority", "patrol_hrs", "recommendation"]
+    ].copy()
+    station_df.columns = ["Station", "EPI Score", "Priority", "Patrol hrs/day", "Recommendation"]
+    station_df["EPI Score"] = station_df["EPI Score"].round(1)
+
+    st.dataframe(
+        station_df,
+        column_config={
+            "EPI Score": st.column_config.ProgressColumn(
+                "EPI", min_value=0, max_value=float(station_df["EPI Score"].max())
+            ),
+            "Recommendation": st.column_config.TextColumn("Action"),
+        },
+        hide_index=True,
+        use_container_width=True,
+        height=420,
+    )
+
+    # ── 4 metric cards for top 4 stations ────────────────────────────────────
+    top4 = alloc_df.head(4)
+    c1, c2, c3, c4 = st.columns(4)
+    for col, (_, row) in zip([c1, c2, c3, c4], top4.iterrows()):
+        col.metric(
+            label=str(row["police_station"])[:22],
+            value=f"{row['patrol_hrs']} hrs/day",
+            delta=f"EPI {row['epi']:.1f}",
+        )
+
+    # Compute anomaly stations every render so the command-center heatmap layer
+    # is always populated regardless of which expanders the user has opened.
+    _anomaly_names_set: set[str] = set()
+    try:
+        from scipy.stats import zscore as _zscore
+        for _stn, _vals in df.groupby("police_station")["cis"]:
+            if len(_vals) >= 2 and float(_zscore(_vals.values).max()) > 2.5:
+                _anomaly_names_set.add(_stn)
+    except Exception:
+        pass
+    _stn_coords = (
+        df.groupby("police_station")
+        .agg(lat=("latitude", "median"), lon=("longitude", "median"))
+        .reset_index()
+    )
+    st.session_state["anomaly_stations"] = [
+        {"name": _s, "lat": float(_stn_coords.loc[_stn_coords["police_station"] == _s, "lat"].iloc[0]),
+                     "lon": float(_stn_coords.loc[_stn_coords["police_station"] == _s, "lon"].iloc[0])}
+        for _s in _anomaly_names_set
+        if not _stn_coords.loc[_stn_coords["police_station"] == _s].empty
+        and pd.notna(_stn_coords.loc[_stn_coords["police_station"] == _s, "lat"].iloc[0])
+        and pd.notna(_stn_coords.loc[_stn_coords["police_station"] == _s, "lon"].iloc[0])
+    ]
+
     st.divider()
-    _render_simulator(df)
-    st.divider()
-    _render_compare()
+
+    with st.expander("🎮 What-if simulator", expanded=False):
+        _render_simple_simulator(df)
+
+    with st.expander("🕐 Recommended patrol hours per zone", expanded=False):
+        _render_patrol_hours_expander(df)
+
+    with st.expander("📊 Enforcement effectiveness score", expanded=False):
+        _render_effectiveness_expander(df)
+
+    with st.expander("🔁 Upload post-enforcement CSV to compare", expanded=False):
+        st.caption("Upload two CSVs — baseline and post-enforcement — to calculate improvement metrics.")
+        _render_compare()

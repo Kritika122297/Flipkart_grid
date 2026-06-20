@@ -639,19 +639,20 @@ def _render_impact(df):
     style_fig(fig_cost, 480)
     st.plotly_chart(fig_cost, use_container_width=True)
 
-    with st.expander("📋 **Assumptions & Methodology**"):
-        st.markdown(f"""
+    st.markdown("**📋 Assumptions & Methodology**")
+    st.markdown(f"""
 | Parameter | Value |
 |-----------|-------|
 | Delay per violation | {delay_per_violation} person-hours |
 | Value of time | ₹{time_value}/hour |
 | Data period | {date_range_days} days |
 | Enforcement reduction | {reduction_pct}% |
+
 **Model**: Each parking violation is estimated to cause **{delay_per_violation} person-hours**
 of cumulative congestion delay (accounting for cascading effects on traffic flow).
 The economic cost = violations × delay × value-of-time.
 Savings assume targeted enforcement at high-EPI stations reduces violations by the selected percentage.
-        """)
+    """)
 
 
 def _render_emergency(df: pd.DataFrame):
@@ -680,12 +681,269 @@ def _render_emergency(df: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  HELPERS FOR EXPANDER SECTIONS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _render_temporal_charts(df):
+    """Weekday vs weekend hourly CIS curves + hourly/DOW bars + violation breakdown."""
+    wkday = df[df["is_weekend"] == 0].groupby("hour")["cis"].mean().reindex(range(24), fill_value=0)
+    wkend = df[df["is_weekend"] == 1].groupby("hour")["cis"].mean().reindex(range(24), fill_value=0)
+    fig_wave = go.Figure()
+    fig_wave.add_trace(go.Scatter(
+        x=list(range(24)), y=wkday.values, name="Weekday",
+        fill="tozeroy", fillcolor="rgba(108,99,255,0.12)",
+        line=dict(color="#6C63FF", width=2.5),
+        hovertemplate="Hour %{x}:00 — Avg CIS %{y:.1f}<extra>Weekday</extra>",
+    ))
+    fig_wave.add_trace(go.Scatter(
+        x=list(range(24)), y=wkend.values, name="Weekend",
+        fill="tozeroy", fillcolor="rgba(0,210,255,0.10)",
+        line=dict(color="#00D2FF", width=2.5),
+        hovertemplate="Hour %{x}:00 — Avg CIS %{y:.1f}<extra>Weekend</extra>",
+    ))
+    fig_wave.update_layout(
+        title=dict(text="Avg CIS by Hour — Weekday vs Weekend", font=dict(size=14, color="#ddd")),
+        xaxis=dict(title="Hour of Day", dtick=2),
+        yaxis_title="Avg CIS",
+    )
+    style_fig(fig_wave, 360)
+    st.plotly_chart(fig_wave, use_container_width=True)
+
+    a1, a2 = st.columns(2)
+    with a1:
+        hc = hourly_counts(df)
+        rush_hours = set(range(7, 11)) | set(range(16, 21))
+        bar_clr = ["#FF4B4B" if h in rush_hours else "#6C63FF" for h in range(24)]
+        fig_hour = go.Figure(go.Bar(
+            x=list(range(24)), y=hc.values,
+            marker=dict(color=bar_clr, line=dict(width=0)),
+            text=hc.values, textposition="outside", textfont=dict(size=9, color="#888"),
+        ))
+        fig_hour.update_layout(
+            title=dict(text="Violations by Hour of Day", font=dict(size=14, color="#ddd")),
+            xaxis=dict(title="Hour", dtick=1), yaxis_title="Count",
+            annotations=[dict(x=8.5, y=hc.max() * 1.1, text="🔴 Rush Hours",
+                showarrow=False, font=dict(color="#FF4B4B", size=10))],
+        )
+        style_fig(fig_hour, 360)
+        st.plotly_chart(fig_hour, use_container_width=True)
+    with a2:
+        dc = dow_counts(df)
+        fig_dow = go.Figure(go.Bar(
+            x=dc.index, y=dc.values,
+            marker=dict(color=["#6C63FF"] * 5 + ["#00D2FF"] * 2, line=dict(width=0)),
+            text=dc.values, textposition="outside", textfont=dict(size=10, color="#888"),
+        ))
+        fig_dow.update_layout(
+            title=dict(text="Violations by Day of Week", font=dict(size=14, color="#ddd")),
+            xaxis_title=None, yaxis_title="Count",
+        )
+        style_fig(fig_dow, 360)
+        st.plotly_chart(fig_dow, use_container_width=True)
+
+    vtc = violation_type_counts(df)
+    n_vt = len(vtc)
+    vt_colors = [
+        f"rgba({108 + int(i * 100 / max(n_vt, 1))}, {99 + int(i * 60 / max(n_vt, 1))}, 255, 0.85)"
+        for i in range(n_vt)
+    ][::-1]
+    fig_vt = go.Figure(go.Bar(
+        x=vtc.values[::-1], y=vtc.index[::-1], orientation="h",
+        marker=dict(color=vt_colors, line=dict(width=0)),
+        text=vtc.values[::-1], textposition="outside", textfont=dict(size=10, color="#aaa"),
+    ))
+    fig_vt.update_layout(
+        title=dict(text="Violation Type Breakdown", font=dict(size=14, color="#ddd")),
+        xaxis_title="Count", yaxis_title=None,
+    )
+    style_fig(fig_vt, 400)
+    st.plotly_chart(fig_vt, use_container_width=True)
+
+
+def _render_cis_histogram(df):
+    fig = px.histogram(
+        df, x="cis", nbins=50,
+        color_discrete_sequence=["#6C63FF"],
+        labels={"cis": "CIS Score"},
+        title="Distribution of Congestion Impact Scores",
+    )
+    fig.update_traces(marker_line_width=0, opacity=0.85)
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=380, bargap=0.02,
+        xaxis_title="CIS Score", yaxis_title="Count",
+        margin=dict(l=0, r=0, t=40, b=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_vehicle_hour_chart(df):
+    if "vehicle_type" not in df.columns:
+        st.info("No vehicle_type column in data.")
+        return
+    top_types = df["vehicle_type"].value_counts().head(6).index.tolist()
+    veh_hour = (
+        df[df["vehicle_type"].isin(top_types)]
+        .groupby(["hour", "vehicle_type"])
+        .size().reset_index(name="count")
+    )
+    palette = ["#6C63FF", "#00D2FF", "#7C3AED", "#3B82F6", "#10B981", "#F59E0B"]
+    fig = go.Figure()
+    for i, vtype in enumerate(top_types):
+        sub = veh_hour[veh_hour["vehicle_type"] == vtype]
+        fig.add_trace(go.Bar(
+            x=sub["hour"], y=sub["count"], name=vtype,
+            marker_color=palette[i % len(palette)],
+        ))
+    fig.update_layout(
+        barmode="stack",
+        title=dict(text="Violations by Vehicle Type × Hour", font=dict(size=14, color="#ddd")),
+        xaxis=dict(title="Hour of Day", dtick=2),
+        yaxis_title="Violation Count",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        height=400,
+        legend=dict(orientation="h", y=-0.22),
+        margin=dict(l=0, r=0, t=40, b=60),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_anomaly_detail(df):
+    stn_stats = (
+        df.groupby("police_station")["cis"]
+        .agg(avg_cis="mean", violation_count="count")
+        .reset_index()
+    )
+    mu = stn_stats["avg_cis"].mean()
+    sigma = stn_stats["avg_cis"].std()
+    stn_stats["z_score"] = (stn_stats["avg_cis"] - mu) / sigma
+    anomalies = stn_stats[stn_stats["z_score"] > 2.0].sort_values("z_score", ascending=False)
+
+    if anomalies.empty:
+        st.info("No anomalous zones detected at z-score > 2.0 threshold.")
+        return
+
+    st.markdown(f"**{len(anomalies)} zones significantly above city-average CIS (z > 2.0)**")
+    for _, row in anomalies.iterrows():
+        badge = "🔴" if row["z_score"] > 3 else "🟠"
+        st.markdown(
+            f"{badge} **{row['police_station']}** — "
+            f"Avg CIS: `{row['avg_cis']:.1f}` &nbsp;·&nbsp; "
+            f"z-score: `{row['z_score']:.2f}` &nbsp;·&nbsp; "
+            f"Violations: `{int(row['violation_count']):,}`"
+        )
+
+    st.divider()
+
+    numeric_cols = ["violation_severity", "vehicle_size_score", "time_factor", "junction_factor"]
+    available = [c for c in numeric_cols if c in df.columns]
+    if available:
+        st.markdown("**Feature correlation with CIS (proxy for model importance)**")
+        corrs = df[available + ["cis"]].corr()["cis"].drop("cis").abs().sort_values(ascending=False)
+        fig_imp = go.Figure(go.Bar(
+            x=corrs.values, y=corrs.index, orientation="h",
+            marker=dict(
+                color=[f"rgba(108,99,255,{0.45 + 0.55 * v:.2f})" for v in corrs.values],
+                line=dict(width=0),
+            ),
+            text=[f"{v:.3f}" for v in corrs.values],
+            textposition="outside",
+            textfont=dict(size=10, color="#aaa"),
+        ))
+        fig_imp.update_layout(
+            title=dict(text="CIS Feature Correlation", font=dict(size=13, color="#ddd")),
+            xaxis_title="|Correlation with CIS|", yaxis_title=None,
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            height=260,
+            margin=dict(l=0, r=0, t=40, b=0),
+        )
+        st.plotly_chart(fig_imp, use_container_width=True)
+
+    peak_risk_hour = int(df.groupby("hour")["cis"].mean().idxmax())
+    st.markdown(
+        f"**Model prediction:** Peak high-risk hour is `{peak_risk_hour:02d}:00` "
+        f"(avg CIS = `{df[df['hour'] == peak_risk_hour]['cis'].mean():.1f}`)"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(df):
-    _render_analytics(df)
+    # ── Row 1: Three impact KPIs ──────────────────────────────────────────────
+    date_range_days = max(
+        (df["created_datetime"].max() - df["created_datetime"].min()).days, 1
+    )
+    avg_daily = len(df) / date_range_days
+    monthly_cost_cr = avg_daily * 0.5 * 200 * 30 / 1e7
+    avg_delay_min = df["cis"].mean() / 100 * MAX_PARKING_DELAY_MIN
+    productivity_hrs_month = avg_daily * 0.5 * 30
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Monthly congestion cost", f"₹{monthly_cost_cr:.1f} Cr")
+    with col2:
+        st.metric("Avg ambulance delay", f"+{avg_delay_min:.1f} min")
+    with col3:
+        st.metric("Productivity lost/month", f"{productivity_hrs_month:,.0f} hrs")
+
+    # ── Row 2: day × hour heatmap ─────────────────────────────────────────────
+    st.subheader("Violation intensity — day × hour")
+    pivot = hour_dow_pivot(df)
+    fig_hm = go.Figure(go.Heatmap(
+        z=pivot.values,
+        x=pivot.columns,
+        y=[f"{h:02d}:00" for h in pivot.index],
+        colorscale=[
+            [0,    "#0E1117"],
+            [0.25, "#2a1a5e"],
+            [0.5,  "#6C63FF"],
+            [0.75, "#00D2FF"],
+            [1.0,  "#FF4B4B"],
+        ],
+        hovertemplate="Day: %{x}<br>Hour: %{y}<br>Violations: %{z}<extra></extra>",
+        colorbar=dict(title="Count", tickfont=dict(color="#888")),
+    ))
+    fig_hm.update_layout(
+        title=dict(text="Hour × Day Heatmap", font=dict(size=14, color="#ddd")),
+        xaxis_title=None,
+        yaxis=dict(title=None, autorange="reversed"),
+    )
+    style_fig(fig_hm, 420)
+    st.plotly_chart(fig_hm, use_container_width=True)
+
+    # ── Anomaly count (always visible) ───────────────────────────────────────
+    stn_cis = df.groupby("police_station")["cis"].mean()
+    anomaly_count = int((stn_cis > stn_cis.mean() + 2.0 * stn_cis.std()).sum())
+    st.info(
+        f"🔍 {anomaly_count} anomalous zones detected by AI model — expand below for details"
+    )
+
     st.divider()
-    _render_impact(df)
-    st.divider()
-    _render_emergency(df)
+
+    # ── Secondary sections in expanders ──────────────────────────────────────
+    with st.expander("📈 Weekday vs weekend congestion curves", expanded=False):
+        _render_temporal_charts(df)
+
+    with st.expander("🚑 Ambulance delay breakdown by zone", expanded=False):
+        with st.spinner("Computing emergency risk metrics…"):
+            station_agg = compute_station_risk(df)
+        _emg_render_risk_map(station_agg)
+        _emg_render_delay_calculator(df, station_agg)
+        _emg_render_hourly_chart(df)
+
+    with st.expander("💰 Economic cost breakdown by zone", expanded=False):
+        _render_impact(df)
+
+    with st.expander("📊 CIS score distribution", expanded=False):
+        _render_cis_histogram(df)
+
+    with st.expander("🚗 Vehicle type × hour breakdown", expanded=False):
+        _render_vehicle_hour_chart(df)
+
+    with st.expander("🤖 AI model predictions & anomaly detail", expanded=False):
+        _render_anomaly_detail(df)

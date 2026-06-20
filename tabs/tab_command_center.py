@@ -1139,12 +1139,143 @@ def _render_timelapse(df: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  DIRECT MAP (no filter UI)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _render_map_direct(df: pd.DataFrame, map_mode: str) -> None:
+    try:
+        import folium
+        from folium.plugins import HeatMap
+        from streamlit_folium import st_folium
+    except ImportError:
+        st.warning("Run: `pip install folium streamlit-folium`")
+        return
+
+    valid = df.dropna(subset=["latitude", "longitude", "cis"])
+    if len(valid) > _MAX_HEAT_PTS:
+        valid = valid.sample(_MAX_HEAT_PTS, random_state=42)
+
+    if map_mode == "CIS Score":
+        cis_max = float(valid["cis"].max()) or 1.0
+        weights = (valid["cis"] / cis_max).tolist()
+    else:
+        weights = [1.0] * len(valid)
+
+    data = list(zip(valid["latitude"].tolist(), valid["longitude"].tolist(), weights))
+
+    m = folium.Map(
+        location=_BGLR_CENTER, zoom_start=12,
+        tiles=_MAP_TILES["Dark"], control_scale=True,
+    )
+    HeatMap(data, radius=14, blur=12, max_zoom=15,
+            gradient=_HEAT_GRADIENT, min_opacity=0.3).add_to(m)
+
+    epi_df = _compute_epi(df[["police_station", "cis", "latitude", "longitude"]].copy())
+    _layer_enforcement(m, epi_df)
+    _layer_landmarks(m)
+    _layer_anomaly_markers(m)
+
+    st_folium(m, width=None, height=580, returned_objects=[])
+    _render_map_legend()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CRITICAL JUNCTION ALERTS (expander content)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _render_critical_alerts(df: pd.DataFrame) -> None:
+    # Top stations + vehicle breakdown charts (from overview)
+    col_left, col_right = st.columns([1.2, 1])
+    with col_left:
+        sc = station_counts(df)
+        n_bars = len(sc)
+        bar_colors = [
+            f"rgba({108 + int(i * 147 / n_bars)}, {99 - int(i * 20 / n_bars)}, 255, 0.85)"
+            for i in range(n_bars)
+        ][::-1]
+        fig_stations = go.Figure(
+            go.Bar(
+                x=sc.values[::-1],
+                y=sc.index[::-1],
+                orientation="h",
+                marker=dict(color=bar_colors, line=dict(width=0)),
+                text=sc.values[::-1],
+                textposition="outside",
+                textfont=dict(size=11, color="#aaa"),
+            )
+        )
+        fig_stations.update_layout(
+            title=dict(text="Top 15 Police Stations by Violations", font=dict(size=15, color="#ddd")),
+            xaxis_title=None,
+            yaxis_title=None,
+        )
+        style_fig(fig_stations, 500)
+        st.plotly_chart(fig_stations, use_container_width=True)
+
+    with col_right:
+        vc = vehicle_counts(df)
+        fig_veh = go.Figure(
+            go.Pie(
+                labels=vc.index,
+                values=vc.values,
+                hole=0.52,
+                marker=dict(colors=ACCENT_SEQ[: len(vc)]),
+                textinfo="label+percent",
+                textfont=dict(size=11, color="#ddd"),
+                hoverinfo="label+value+percent",
+            )
+        )
+        fig_veh.update_layout(
+            title=dict(text="Vehicle Type Distribution", font=dict(size=15, color="#ddd")),
+            showlegend=False,
+        )
+        style_fig(fig_veh, 500)
+        st.plotly_chart(fig_veh, use_container_width=True)
+
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+
+    left, right = st.columns(2)
+    with left:
+        _render_hotspots(df)
+    with right:
+        _render_viol_chart(df)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(df):
-    _render_overview(df)
+    # ── KPI cards ────────────────────────────────────────────────────────────
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total violations", f"{len(df):,}")
+    with col2:
+        st.metric("Avg CIS", f"{df['cis'].mean():.2f}")
+    with col3:
+        st.metric("Worst zone", df.groupby("police_station")["cis"].mean().idxmax())
+    with col4:
+        peak_hr = int(df.groupby("hour")["cis"].mean().idxmax())
+        suffix = "AM" if peak_hr < 12 else "PM"
+        display_hr = peak_hr if peak_hr <= 12 else peak_hr - 12
+        st.metric("Peak hour", f"{display_hr}:00 {suffix}")
+
+    # ── Count vs CIS toggle ───────────────────────────────────────────────────
+    map_mode = st.radio(
+        "Heatmap weight",
+        ["CIS Score", "Violation Count"],
+        horizontal=True,
+        key="cc_map_mode",
+        label_visibility="collapsed",
+    )
+
+    # ── Map (direct, no expander) ─────────────────────────────────────────────
+    _render_map_direct(df, map_mode)
+
     st.divider()
-    _render_heatmap(df)
-    st.divider()
-    _render_timelapse(df)
+
+    with st.expander("⏳ Hour-by-hour animation", expanded=False):
+        _render_timelapse(df)
+
+    with st.expander("🔴 Critical junction alerts", expanded=False):
+        _render_critical_alerts(df)

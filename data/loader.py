@@ -101,3 +101,75 @@ def auto_load():
             except Exception as e:
                 st.error(f"Error loading data: {e}")
     return None, None
+
+
+def load_demo_data() -> str:
+    """Generate synthetic BTP violation data and return the CSV path."""
+    import numpy as np
+
+    demo_path = os.path.join(os.path.dirname(__file__), "_demo_data.csv")
+    if os.path.exists(demo_path):
+        return demo_path
+
+    rng = np.random.default_rng(42)
+    n   = 1000
+
+    stations = [
+        "Koramangala", "Indiranagar", "Silk Board", "HSR Layout",
+        "Whitefield", "Marathahalli", "Jayanagar", "Rajajinagar",
+        "Electronic City", "Yelahanka",
+    ]
+    locations = [
+        "80 Feet Road", "100 Feet Road", "Sarjapur Road", "Hosur Road",
+        "Old Airport Road", "Outer Ring Road", "MG Road", "Brigade Road",
+    ]
+    vehicle_types   = ["Car", "Two-wheeler", "Bus", "Auto", "HGV/Truck", "Tanker"]
+    violation_types = [
+        "No Parking", "Double Parking", "Blocking Traffic",
+        "Footpath Parking", "No Parking Zone",
+    ]
+    junctions = [
+        "Sony World Signal", "Silk Board Junction", "Marathahalli Bridge",
+        "KR Puram Signal", "NO JUNCTION",
+    ]
+    lat_lon = {
+        "Koramangala":     (12.935, 77.624),
+        "Indiranagar":     (12.978, 77.641),
+        "Silk Board":      (12.917, 77.622),
+        "HSR Layout":      (12.911, 77.637),
+        "Whitefield":      (12.969, 77.750),
+        "Marathahalli":    (12.959, 77.700),
+        "Jayanagar":       (12.925, 77.583),
+        "Rajajinagar":     (12.992, 77.553),
+        "Electronic City": (12.844, 77.660),
+        "Yelahanka":       (13.101, 77.594),
+    }
+
+    station_col = rng.choice(stations, size=n)
+    lats = [lat_lon[s][0] + rng.normal(0, 0.008) for s in station_col]
+    lons = [lat_lon[s][1] + rng.normal(0, 0.008) for s in station_col]
+
+    start_ts   = pd.Timestamp("2024-01-01")
+    end_ts     = pd.Timestamp("2024-05-31")
+    total_secs = int((end_ts - start_ts).total_seconds())
+    timestamps = [
+        start_ts + pd.Timedelta(seconds=int(s))
+        for s in rng.integers(0, total_secs, size=n)
+    ]
+
+    demo_df = pd.DataFrame({
+        "id":               range(1, n + 1),
+        "police_station":   station_col,
+        "location":         rng.choice(locations, size=n),
+        "vehicle_type":     rng.choice(
+            vehicle_types, size=n, p=[0.30, 0.35, 0.10, 0.10, 0.10, 0.05]
+        ),
+        "violation_type":   rng.choice(violation_types, size=n),
+        "junction_name":    rng.choice(junctions, size=n, p=[0.15, 0.15, 0.15, 0.15, 0.40]),
+        "latitude":         lats,
+        "longitude":        lons,
+        "created_datetime": timestamps,
+    })
+
+    demo_df.to_csv(demo_path, index=False)
+    return demo_path
