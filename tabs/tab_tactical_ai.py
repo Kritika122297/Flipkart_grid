@@ -413,9 +413,10 @@ def render(df: pd.DataFrame) -> None:
     st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
     st.plotly_chart(_anomaly_bar(anom), use_container_width=True)
 
-    with st.expander("📋 Full Anomaly Table"):
-        disp = anom[["police_station", "date", "count", "expected", "avg_cis", "z_score"]].copy()
-        disp.columns = ["Station", "Date", "Violations", "Expected", "Avg CIS", "Z-Score"]
-        disp["Z-Score"] = disp["Z-Score"].round(2)
-        disp["Avg CIS"] = disp["Avg CIS"].round(1)
-        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+    st.markdown("#### 📋 Full Anomaly Table")
+    disp = anom[["police_station", "date", "count", "expected", "avg_cis", "z_score"]].copy()
+    disp.columns = ["Station", "Date", "Violations", "Expected", "Avg CIS", "Z-Score"]
+    disp["Z-Score"] = disp["Z-Score"].round(2)
+    disp["Avg CIS"] = disp["Avg CIS"].round(1)
+    st.dataframe(disp, use_container_width=True, hide_index=True)

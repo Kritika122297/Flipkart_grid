@@ -12,6 +12,7 @@ Sections
    d. 📊 Visualize    — interactive histogram, boxplot, scatter
 """
 
+from __future__ import annotations
 import io
 import os
 import streamlit as st
