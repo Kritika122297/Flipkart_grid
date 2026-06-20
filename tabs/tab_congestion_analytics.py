@@ -1,14 +1,19 @@
 """
-tabs/tab_emergency.py — 🚑 Emergency Impact Tab
-Shows how illegal parking delays ambulances and costs lives.
+tabs/tab_congestion_analytics.py — 📊 Congestion Analytics
+Merged from: tab_analytics + tab_impact + tab_emergency
 """
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from math import radians, sin, cos, sqrt, atan2
+from charts.utils import hourly_counts, dow_counts, violation_type_counts, hour_dow_pivot, style_fig
 
-# ── Constants ─────────────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  EMERGENCY — CONSTANTS
+# ══════════════════════════════════════════════════════════════════════════════
+
 DAILY_AMBULANCE_CALLS     = 85
 MAX_PARKING_DELAY_MIN     = 8.0
 VALUE_OF_TIME_RS_PER_MIN  = 3.33
@@ -34,7 +39,10 @@ _COLOR_MAP = {
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+#  EMERGENCY — HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371
     dlat = radians(lat2 - lat1)
@@ -43,7 +51,6 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
-# ── Cached Aggregation ────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def compute_station_risk(_df: pd.DataFrame) -> pd.DataFrame:
     agg = (
@@ -67,8 +74,7 @@ def compute_station_risk(_df: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-# ── Section 1: Hero Banner ────────────────────────────────────────────
-def _render_hero():
+def _emg_render_hero():
     st.markdown("""
 <div style="background:linear-gradient(135deg,rgba(239,68,68,0.15),
 rgba(251,146,60,0.10)); border:1px solid rgba(239,68,68,0.25);
@@ -87,8 +93,7 @@ border-radius:20px; padding:32px; text-align:center; margin-bottom:24px;">
 """, unsafe_allow_html=True)
 
 
-# ── Section 2: City-Wide Impact Metrics ──────────────────────────────
-def _render_city_metrics(df: pd.DataFrame, station_agg: pd.DataFrame):
+def _emg_render_city_metrics(df: pd.DataFrame, station_agg: pd.DataFrame):
     avg_cis_city      = df["cis"].mean()
     avg_delay         = avg_cis_city / 100 * MAX_PARKING_DELAY_MIN
     critical_zones    = int((station_agg["avg_cis"] > 60).sum())
@@ -118,8 +123,7 @@ text-align:center;">
 """, unsafe_allow_html=True)
 
 
-# ── Section 3: Interactive Risk Map ───────────────────────────────────
-def render_risk_map(station_agg: pd.DataFrame):
+def _emg_render_risk_map(station_agg: pd.DataFrame):
     st.markdown("### 🗺️ Emergency Response Risk Map")
     st.markdown(
         "<p style='color:#888; font-size:0.88rem; margin-top:-8px; margin-bottom:12px;'>"
@@ -186,13 +190,9 @@ def render_risk_map(station_agg: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# ── Section 4: Interactive Delay Calculator ───────────────────────────
-def render_delay_calculator(df: pd.DataFrame, station_agg: pd.DataFrame):
+def _emg_render_delay_calculator(df: pd.DataFrame, station_agg: pd.DataFrame):
     st.markdown("### 🧮 Response Time Calculator")
-    st.markdown(
-        "<hr style='border:1px solid rgba(255,255,255,0.07);'>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<hr style='border:1px solid rgba(255,255,255,0.07);'>", unsafe_allow_html=True)
 
     left, right = st.columns([1, 1])
 
@@ -202,9 +202,7 @@ def render_delay_calculator(df: pd.DataFrame, station_agg: pd.DataFrame):
         destination = st.selectbox(
             "🏥 Nearest Hospital", [h["name"] for h in HOSPITALS], key="emg_dest"
         )
-        calc_clicked = st.button(
-            "🔍 Calculate Response Time", use_container_width=True, key="emg_calc_btn"
-        )
+        calc_clicked = st.button("🔍 Calculate Response Time", use_container_width=True, key="emg_calc_btn")
 
     if calc_clicked:
         st.session_state["_emg_origin"] = origin
@@ -222,37 +220,35 @@ def render_delay_calculator(df: pd.DataFrame, station_agg: pd.DataFrame):
             if station_row.empty or hosp is None:
                 st.warning("No location data available for the selected station.")
             else:
-                slat           = float(station_row["avg_lat"].iloc[0])
-                slon           = float(station_row["avg_lon"].iloc[0])
-                stn_cis        = float(station_row["avg_cis"].iloc[0])
+                slat       = float(station_row["avg_lat"].iloc[0])
+                slon       = float(station_row["avg_lon"].iloc[0])
+                stn_cis    = float(station_row["avg_cis"].iloc[0])
 
-                dist_km        = haversine(slat, slon, hosp["lat"], hosp["lon"])
-                road_km        = dist_km * 1.4
-                base_min       = road_km / AMBULANCE_SPEED_KMPH * 60
-                park_delay     = stn_cis / 100 * MAX_PARKING_DELAY_MIN
-                total_min      = base_min + park_delay
-                survival_drop  = CARDIAC_SURVIVAL_DROP * park_delay * 100
+                dist_km    = haversine(slat, slon, hosp["lat"], hosp["lon"])
+                road_km    = dist_km * 1.4
+                base_min   = road_km / AMBULANCE_SPEED_KMPH * 60
+                park_delay = stn_cis / 100 * MAX_PARKING_DELAY_MIN
+                total_min  = base_min + park_delay
+                survival_drop = CARDIAC_SURVIVAL_DROP * park_delay * 100
 
                 delay_hex = "#EF4444" if park_delay > 3 else "#F59E0B"
                 result_cards = [
-                    ("🛣️ Road Distance",   f"{road_km:.1f} km",   "#6C63FF"),
-                    ("⏱️ Baseline Travel", f"{base_min:.1f} min",  "#6C63FF"),
+                    ("🛣️ Road Distance",   f"{road_km:.1f} km",    "#6C63FF"),
+                    ("⏱️ Baseline Travel", f"{base_min:.1f} min",   "#6C63FF"),
                     ("🅿️ Parking Delay",   f"{park_delay:.1f} min", delay_hex),
-                    ("🚑 Total Response",  f"{total_min:.1f} min", "#6C63FF"),
+                    ("🚑 Total Response",  f"{total_min:.1f} min",  "#6C63FF"),
                 ]
                 rc1, rc2 = st.columns(2)
                 for i, (title, val, hx) in enumerate(result_cards):
                     c = rc1 if i % 2 == 0 else rc2
                     c.markdown(f"""
 <div style="background:rgba(30,33,48,0.65); border:1px solid rgba(108,99,255,0.15);
-border-radius:12px; padding:14px; text-align:center; margin-bottom:8px;
-backdrop-filter:blur(12px);">
+border-radius:12px; padding:14px; text-align:center; margin-bottom:8px;">
   <div style="font-size:0.78rem; color:#888;">{title}</div>
   <div style="font-size:1.6rem; font-weight:800; color:{hx};">{val}</div>
 </div>
 """, unsafe_allow_html=True)
 
-                # Risk badge
                 if total_min < 7:
                     badge_text   = "🟢 ACCEPTABLE — Within target response time"
                     badge_bg     = "rgba(16,185,129,0.12)"
@@ -300,8 +296,7 @@ border-radius:14px; padding:44px; text-align:center; color:#555; margin-top:8px;
 """, unsafe_allow_html=True)
 
 
-# ── Section 5: Hour-by-Hour Delay Chart ──────────────────────────────
-def _render_hourly_chart(df: pd.DataFrame):
+def _emg_render_hourly_chart(df: pd.DataFrame):
     st.markdown("### 📈 Ambulance Delay Risk Throughout the Day")
 
     hourly_cis   = df.groupby("hour")["cis"].mean().reindex(range(24), fill_value=0)
@@ -320,18 +315,14 @@ def _render_hourly_chart(df: pd.DataFrame):
         hovertemplate="Hour %{x}:00 — %{y:.2f} min delay<extra></extra>",
     ))
 
-    fig.add_hline(
-        y=4, line_dash="dash", line_color="#10B981", line_width=1.5,
-        annotation_text="Safe threshold (4 min)",
-        annotation_position="top right",
-        annotation_font_color="#10B981",
-    )
-    fig.add_hline(
-        y=6, line_dash="dash", line_color="#EF4444", line_width=1.5,
-        annotation_text="Critical threshold (6 min)",
-        annotation_position="top right",
-        annotation_font_color="#EF4444",
-    )
+    fig.add_hline(y=4, line_dash="dash", line_color="#10B981", line_width=1.5,
+                  annotation_text="Safe threshold (4 min)",
+                  annotation_position="top right",
+                  annotation_font_color="#10B981")
+    fig.add_hline(y=6, line_dash="dash", line_color="#EF4444", line_width=1.5,
+                  annotation_text="Critical threshold (6 min)",
+                  annotation_position="top right",
+                  annotation_font_color="#EF4444")
 
     fig.update_layout(
         template="plotly_dark",
@@ -368,8 +359,7 @@ def _render_hourly_chart(df: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# ── Section 6: Enforcement Impact Callout ────────────────────────────
-def _render_enforcement_callout(station_agg: pd.DataFrame):
+def _emg_render_enforcement_callout(station_agg: pd.DataFrame):
     st.markdown("### 💡 What Targeted Enforcement Can Achieve")
 
     top5           = station_agg.nlargest(5, "avg_cis")
@@ -393,10 +383,8 @@ border:1px solid rgba(239,68,68,0.30); border-radius:16px; padding:24px;">
     🔴 Current State
   </div>
   <div style="color:#ccc; font-size:0.88rem; line-height:2.2;">
-    <div>Avg delay in top 5 zones:
-      <b style='color:#EF4444;'>{current_delay:.1f} min</b></div>
-    <div>Annual cardiac risk events:
-      <b style='color:#EF4444;'>~{annual_cardiac:,}</b></div>
+    <div>Avg delay in top 5 zones: <b style='color:#EF4444;'>{current_delay:.1f} min</b></div>
+    <div>Annual cardiac risk events: <b style='color:#EF4444;'>~{annual_cardiac:,}</b></div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -409,12 +397,9 @@ border:1px solid rgba(16,185,129,0.30); border-radius:16px; padding:24px;">
     ✅ After ParkWatch AI Enforcement
   </div>
   <div style="color:#ccc; font-size:0.88rem; line-height:2.2;">
-    <div>Avg delay reduced to:
-      <b style='color:#10B981;'>{after_delay:.1f} min</b></div>
-    <div>Annual lives potentially saved:
-      <b style='color:#10B981;'>~{lives_saved:,}</b></div>
-    <div>Annual savings:
-      <b style='color:#10B981;'>₹{savings_lakhs:,} Lakhs</b></div>
+    <div>Avg delay reduced to: <b style='color:#10B981;'>{after_delay:.1f} min</b></div>
+    <div>Annual lives potentially saved: <b style='color:#10B981;'>~{lives_saved:,}</b></div>
+    <div>Annual savings: <b style='color:#10B981;'>₹{savings_lakhs:,} Lakhs</b></div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -430,39 +415,277 @@ border:1px solid rgba(16,185,129,0.30); border-radius:16px; padding:24px;">
     )
 
 
-# ── Entry Point ───────────────────────────────────────────────────────
-def render(df: pd.DataFrame):
-    _render_hero()
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECTION RENDERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _render_analytics(df):
+    st.markdown(
+        "<p class='section-header'>Deep-Dive Analytics</p>"
+        "<p class='section-sub'>Temporal patterns and violation type breakdown</p>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='pw-info-banner'>"
+        "ℹ️ Charts update automatically based on your uploaded data. "
+        "Hover over any chart for exact values — click legend items to show/hide series."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    a1, a2 = st.columns(2)
+    with a1:
+        hc = hourly_counts(df)
+        rush_hours = set(range(7, 11)) | set(range(16, 21))
+        bar_clr = ["#FF4B4B" if h in rush_hours else "#6C63FF" for h in range(24)]
+        fig_hour = go.Figure(
+            go.Bar(
+                x=list(range(24)),
+                y=hc.values,
+                marker=dict(color=bar_clr, line=dict(width=0)),
+                text=hc.values,
+                textposition="outside",
+                textfont=dict(size=9, color="#888"),
+            )
+        )
+        fig_hour.update_layout(
+            title=dict(text="Violations by Hour of Day", font=dict(size=14, color="#ddd")),
+            xaxis=dict(title="Hour", dtick=1),
+            yaxis_title="Count",
+            annotations=[
+                dict(x=8.5, y=hc.max() * 1.1, text="🔴 Rush Hours",
+                     showarrow=False, font=dict(color="#FF4B4B", size=10))
+            ],
+        )
+        style_fig(fig_hour, 400)
+        st.plotly_chart(fig_hour, use_container_width=True)
+
+    with a2:
+        dc = dow_counts(df)
+        fig_dow = go.Figure(
+            go.Bar(
+                x=dc.index,
+                y=dc.values,
+                marker=dict(color=["#6C63FF"] * 5 + ["#00D2FF"] * 2, line=dict(width=0)),
+                text=dc.values,
+                textposition="outside",
+                textfont=dict(size=10, color="#888"),
+            )
+        )
+        fig_dow.update_layout(
+            title=dict(text="Violations by Day of Week", font=dict(size=14, color="#ddd")),
+            xaxis_title=None,
+            yaxis_title="Count",
+        )
+        style_fig(fig_dow, 400)
+        st.plotly_chart(fig_dow, use_container_width=True)
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    b1, b2 = st.columns(2)
+    with b1:
+        vtc = violation_type_counts(df)
+        n_vt = len(vtc)
+        vt_colors = [
+            f"rgba({108 + int(i * 100 / max(n_vt, 1))}, {99 + int(i * 60 / max(n_vt, 1))}, 255, 0.85)"
+            for i in range(n_vt)
+        ][::-1]
+        fig_vt = go.Figure(
+            go.Bar(
+                x=vtc.values[::-1],
+                y=vtc.index[::-1],
+                orientation="h",
+                marker=dict(color=vt_colors, line=dict(width=0)),
+                text=vtc.values[::-1],
+                textposition="outside",
+                textfont=dict(size=10, color="#aaa"),
+            )
+        )
+        fig_vt.update_layout(
+            title=dict(text="Violation Type Breakdown", font=dict(size=14, color="#ddd")),
+            xaxis_title="Count",
+            yaxis_title=None,
+        )
+        style_fig(fig_vt, 450)
+        st.plotly_chart(fig_vt, use_container_width=True)
+
+    with b2:
+        pivot = hour_dow_pivot(df)
+        fig_hm = go.Figure(
+            go.Heatmap(
+                z=pivot.values,
+                x=pivot.columns,
+                y=[f"{h:02d}:00" for h in pivot.index],
+                colorscale=[
+                    [0, "#0E1117"],
+                    [0.25, "#2a1a5e"],
+                    [0.5, "#6C63FF"],
+                    [0.75, "#00D2FF"],
+                    [1.0, "#FF4B4B"],
+                ],
+                hovertemplate="Day: %{x}<br>Hour: %{y}<br>Violations: %{z}<extra></extra>",
+                colorbar=dict(title="Count", tickfont=dict(color="#888")),
+            )
+        )
+        fig_hm.update_layout(
+            title=dict(text="Hour × Day Heatmap", font=dict(size=14, color="#ddd")),
+            xaxis_title=None,
+            yaxis=dict(title=None, autorange="reversed"),
+        )
+        style_fig(fig_hm, 450)
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+
+def _render_impact(df):
+    st.markdown(
+        "<p class='section-header'>Economic Impact Calculator</p>"
+        "<p class='section-sub'>Quantify the economic cost of parking-induced congestion</p>",
+        unsafe_allow_html=True,
+    )
+
+    inp1, inp2 = st.columns(2)
+    with inp1:
+        reduction_pct = st.slider(
+            "🔽 Enforcement Reduction %", min_value=10, max_value=50, value=30, step=5,
+            help="Estimated % reduction in violations through targeted enforcement",
+        )
+    with inp2:
+        time_value = st.number_input(
+            "⏱️ Value of Time (₹/hour)", min_value=50, max_value=1000, value=200, step=50,
+            help="Average economic value of one person-hour lost in congestion",
+        )
+
+    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+
+    date_range_days = (df["created_datetime"].max() - df["created_datetime"].min()).days
+    date_range_days = max(date_range_days, 1)
+    avg_daily = len(df) / date_range_days
+    delay_per_violation = 0.5
+    daily_cost = avg_daily * delay_per_violation * time_value
+    annual_cost = daily_cost * 365
+    annual_savings = annual_cost * reduction_pct / 100
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.markdown(
+            f"""<div class='kpi-card'>
+                <div class='kpi-label'>Avg Daily Violations</div>
+                <div class='kpi-value'>{avg_daily:,.0f}</div>
+                <div class='kpi-sub'>Over {date_range_days} days</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with m2:
+        st.markdown(
+            f"""<div class='impact-card'>
+                <div class='kpi-label'>Daily Congestion Cost</div>
+                <div class='kpi-value'>₹{daily_cost:,.0f}</div>
+                <div class='kpi-sub'>Est. delay cost</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with m3:
+        st.markdown(
+            f"""<div class='impact-card'>
+                <div class='kpi-label'>Annual Cost</div>
+                <div class='kpi-value'>₹{annual_cost / 1e7:,.1f} Cr</div>
+                <div class='kpi-sub'>Projected yearly</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with m4:
+        st.markdown(
+            f"""<div class='savings-card'>
+                <div class='kpi-label'>Potential Savings</div>
+                <div class='kpi-value'>₹{annual_savings / 1e7:,.1f} Cr</div>
+                <div class='kpi-sub'>At {reduction_pct}% reduction</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+
+    station_agg = (
+        df.groupby("police_station")
+        .agg(violation_count=("id", "size"), avg_severity=("violation_severity", "mean"))
+        .reset_index()
+    )
+    station_agg["est_daily"] = station_agg["violation_count"] / date_range_days
+    station_agg["daily_cost"] = station_agg["est_daily"] * delay_per_violation * time_value
+    station_agg = station_agg.sort_values("daily_cost", ascending=False).head(15)
+
+    n_sc = len(station_agg)
+    cost_colors = [
+        f"rgba({int(255 - i * 8)}, {int(75 + i * 12)}, {int(75 + i * 6)}, 0.9)"
+        for i in range(n_sc)
+    ]
+    fig_cost = go.Figure(
+        go.Bar(
+            x=station_agg["daily_cost"].values[::-1],
+            y=station_agg["police_station"].values[::-1],
+            orientation="h",
+            marker=dict(color=cost_colors[::-1], line=dict(width=0)),
+            text=[f"₹{v:,.0f}" for v in station_agg["daily_cost"].values[::-1]],
+            textposition="outside",
+            textfont=dict(size=10, color="#ddd"),
+        )
+    )
+    fig_cost.update_layout(
+        title=dict(text="Estimated Daily Congestion Cost — Top 15 Stations",
+                   font=dict(size=15, color="#ddd")),
+        xaxis_title="Daily Cost (₹)",
+        yaxis_title=None,
+    )
+    style_fig(fig_cost, 480)
+    st.plotly_chart(fig_cost, use_container_width=True)
+
+    with st.expander("📋 **Assumptions & Methodology**"):
+        st.markdown(f"""
+| Parameter | Value |
+|-----------|-------|
+| Delay per violation | {delay_per_violation} person-hours |
+| Value of time | ₹{time_value}/hour |
+| Data period | {date_range_days} days |
+| Enforcement reduction | {reduction_pct}% |
+**Model**: Each parking violation is estimated to cause **{delay_per_violation} person-hours**
+of cumulative congestion delay (accounting for cascading effects on traffic flow).
+The economic cost = violations × delay × value-of-time.
+Savings assume targeted enforcement at high-EPI stations reduces violations by the selected percentage.
+        """)
+
+
+def _render_emergency(df: pd.DataFrame):
+    _emg_render_hero()
 
     with st.spinner("Computing emergency risk metrics…"):
         station_agg = compute_station_risk(df)
 
-    _render_city_metrics(df, station_agg)
+    _emg_render_city_metrics(df, station_agg)
 
-    st.markdown(
-        "<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
+                unsafe_allow_html=True)
+    _emg_render_risk_map(station_agg)
 
-    render_risk_map(station_agg)
+    st.markdown("<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
+                unsafe_allow_html=True)
+    _emg_render_delay_calculator(df, station_agg)
 
-    st.markdown(
-        "<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
+                unsafe_allow_html=True)
+    _emg_render_hourly_chart(df)
 
-    render_delay_calculator(df, station_agg)
+    st.markdown("<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
+                unsafe_allow_html=True)
+    _emg_render_enforcement_callout(station_agg)
 
-    st.markdown(
-        "<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
-        unsafe_allow_html=True,
-    )
 
-    _render_hourly_chart(df)
+# ══════════════════════════════════════════════════════════════════════════════
+#  PUBLIC ENTRY POINT
+# ══════════════════════════════════════════════════════════════════════════════
 
-    st.markdown(
-        "<hr style='border:1px solid rgba(255,255,255,0.07); margin:28px 0;'>",
-        unsafe_allow_html=True,
-    )
-
-    _render_enforcement_callout(station_agg)
+def render(df):
+    _render_analytics(df)
+    st.divider()
+    _render_impact(df)
+    st.divider()
+    _render_emergency(df)

@@ -232,25 +232,29 @@ def _render_cleaning_panel(df: pd.DataFrame) -> None:
             n = len([c for c in _TEXT_COLS if c in df.columns])
             will_do.append(f"Standardize text in **{n}** column(s)")
 
-        b_col, a_col = st.columns(2)
-        with b_col:
-            st.markdown("<div style='color:#888;font-size:0.78rem;font-weight:700;"
-                        "letter-spacing:1px;margin-bottom:4px;'>BEFORE</div>",
-                        unsafe_allow_html=True)
-            st.metric("Rows",    f"{base['rows']:,}")
-            st.metric("Columns", f"{base['cols']:,}")
-            st.metric("Nulls",   f"{base['nulls']:,}")
-            st.metric("Dupes",   f"{base['dupes']:,}")
-
-        with a_col:
-            st.markdown("<div style='color:#00D264;font-size:0.78rem;font-weight:700;"
-                        "letter-spacing:1px;margin-bottom:4px;'>AFTER</div>",
-                        unsafe_allow_html=True)
-            def _d(a, b): return f"{a-b:,}" if a != b else None
-            st.metric("Rows",    f"{est_rows:,}",        delta=_d(est_rows, base["rows"]),   delta_color="inverse")
-            st.metric("Columns", f"{est_cols:,}",        delta=_d(est_cols, base["cols"]),   delta_color="inverse")
-            st.metric("Nulls",   f"{max(0,est_nulls):,}",delta=_d(max(0,est_nulls), base["nulls"]), delta_color="inverse")
-            st.metric("Dupes",   f"{est_dupes:,}",       delta=_d(est_dupes, base["dupes"]), delta_color="inverse")
+        def _d(a, b): return f"{a-b:,}" if a != b else None
+        # Before / After as stacked markdown to avoid nested columns (Streamlit 1.45 restriction)
+        st.markdown(
+            "<div style='background:rgba(255,255,255,0.03);border-radius:10px;"
+            "padding:12px 14px;margin-bottom:8px;'>"
+            "<div style='color:#888;font-size:0.73rem;font-weight:700;"
+            "letter-spacing:1px;margin-bottom:8px;'>BEFORE</div>"
+            f"<div style='color:#ccc;font-size:0.88rem;line-height:2;'>"
+            f"Rows: <b>{base['rows']:,}</b> &nbsp;·&nbsp; "
+            f"Columns: <b>{base['cols']:,}</b> &nbsp;·&nbsp; "
+            f"Nulls: <b>{base['nulls']:,}</b> &nbsp;·&nbsp; "
+            f"Dupes: <b>{base['dupes']:,}</b></div></div>"
+            "<div style='background:rgba(0,210,100,0.06);border-radius:10px;"
+            "padding:12px 14px;'>"
+            "<div style='color:#00D264;font-size:0.73rem;font-weight:700;"
+            "letter-spacing:1px;margin-bottom:8px;'>AFTER (estimated)</div>"
+            f"<div style='color:#ccc;font-size:0.88rem;line-height:2;'>"
+            f"Rows: <b>{est_rows:,}</b> &nbsp;·&nbsp; "
+            f"Columns: <b>{est_cols:,}</b> &nbsp;·&nbsp; "
+            f"Nulls: <b>{max(0,est_nulls):,}</b> &nbsp;·&nbsp; "
+            f"Dupes: <b>{est_dupes:,}</b></div></div>",
+            unsafe_allow_html=True,
+        )
 
         if will_do:
             st.markdown(
@@ -421,14 +425,18 @@ def _build_excel_report(_df: pd.DataFrame) -> bytes:
 
 def render(df: pd.DataFrame | None, stats: dict | None) -> None:
     if df is None:
-        _show_upload_landing()
+        st.markdown(
+            "<div class='pw-empty-state'>"
+            "<div class='es-icon'>📂</div>"
+            "<div class='es-title'>No data loaded yet</div>"
+            "<div class='es-sub'>Use the <b style='color:#6C63FF;'>sidebar uploader</b> "
+            "to drop your BTP violation CSV — the full EDA panel unlocks instantly.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
         return
 
     _success_banner(stats)
-
-    with st.expander("🔄 Load a different CSV file"):
-        _upload_widget()
-
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
     _cleaning_report(stats)
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)

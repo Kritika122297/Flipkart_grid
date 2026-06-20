@@ -210,9 +210,8 @@ def _risk_heatmap(pivot: pd.DataFrame):
             [0.85, "#EF4444"],
             [1.0,  "#7C3AED"],
         ],
-        colorbar=dict(title="Avg CIS",
-                      tickfont=dict(color="#888"),
-                      titlefont=dict(color="#888")),
+        colorbar=dict(title=dict(text="Avg CIS", font=dict(color="#888")),
+                      tickfont=dict(color="#888")),
         hovertemplate="Station: %{y}<br>Hour: %{x}<br>Avg CIS: %{z:.1f}<extra></extra>",
     ))
     fig.update_layout(

@@ -6,8 +6,14 @@ Run: streamlit run app.py
 """
 import os
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Gemini API key — read once from environment, never exposed in the UI
+_GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 from config.styles import set_page_config, inject_css
-from tabs import tab_data, tab_overview, tab_heatmap, tab_analytics, tab_enforcement, tab_impact, tab_simulator, tab_emergency, tab_timelapse, tab_ai, tab_compare
+from tabs import tab_data, tab_command_center, tab_congestion_analytics, tab_intelligent_dispatch, tab_tactical_commander
 from data.loader import load_and_process_data
 
 set_page_config()
@@ -51,7 +57,7 @@ st.markdown("""
             '>ParkWatch AI</h1>
         </div>
         <p style='color:#94A3B8; font-size:0.95rem; margin:0 0 4px 56px; font-weight:400;'>
-            AI-Powered Parking &amp; Congestion Intelligence for Bengaluru Traffic Police
+            AI-Powered Parking Enforcement &amp; Congestion Intelligence — Flipkart Gridlock Hackathon 2.0
         </p>
         <div style='margin-left:56px; display:flex; gap:10px; flex-wrap:wrap;'>
             <span style='
@@ -106,10 +112,28 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Session state bootstrap ──────────────────────────────────────────
+# ── Global chat state (persists across tab switches and reruns) ──────
+if "chat_panel_open" not in st.session_state:
+    st.session_state["chat_panel_open"] = False
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = []
+st.session_state["gemini_api_key"] = _GEMINI_API_KEY
+
+# ── Session state bootstrap (auto-load demo data if available) ───────
+_DEMO_CSV = os.path.join(os.path.dirname(__file__), "data", "_uploaded_data.csv")
 if "df" not in st.session_state:
-    st.session_state.df = None
-    st.session_state.stats = None
+    if os.path.exists(_DEMO_CSV):
+        try:
+            _df0, _stats0 = load_and_process_data(_DEMO_CSV)
+            st.session_state.df     = _df0
+            st.session_state.raw_df = _df0.copy()
+            st.session_state.stats  = _stats0
+        except Exception:
+            st.session_state.df    = None
+            st.session_state.stats = None
+    else:
+        st.session_state.df    = None
+        st.session_state.stats = None
 
 # ── Process a pending upload (flag set by tab_data's on_change callback) ──
 # The callback deliberately does NO disk I/O (it runs in the asyncio event
@@ -136,6 +160,22 @@ if "_pending_upload_key" in st.session_state:
 df = st.session_state.df
 stats = st.session_state.stats
 
+# ── Sidebar: compact upload widget (no st.columns — sidebar restriction) ──
+with st.sidebar:
+    st.markdown(
+        "<div style='text-align:center;padding:6px 0 14px;'>"
+        "<span style='font-size:1.6rem;font-weight:900;color:#818CF8;'>🅿️ ParkWatch AI</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("##### 📂 Data Upload")
+    tab_data._upload_widget()
+    if df is not None:
+        st.success(f"✅ {len(df):,} records loaded")
+        st.caption("Full data panel → 📂 Data tab")
+    else:
+        st.info("Upload a BTP violation CSV to unlock the dashboard.")
+
 # ── Tabs ─────────────────────────────────────────────────────────────
 def _no_data_msg(tab_hint: str = "") -> None:
     st.markdown(
@@ -143,85 +183,53 @@ def _no_data_msg(tab_hint: str = "") -> None:
         "<div class='es-icon'>📂</div>"
         "<div class='es-title'>No data loaded yet</div>"
         "<div class='es-sub'>"
-        "Go to the <b style='color:#6C63FF;'>📂 Data</b> tab and upload your BTP violation CSV to get started."
+        "Use the <b style='color:#6C63FF;'>sidebar</b> to upload your BTP violation CSV to get started."
         + (f"<br><span style='color:#6C63FF;font-size:0.82rem;margin-top:6px;display:block;'>{tab_hint}</span>" if tab_hint else "")
         + "</div></div>",
         unsafe_allow_html=True,
     )
 
-tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🏠 Command Center",
+    "📊 Congestion Analytics",
+    "🎯 Intelligent Dispatch",
+    "🤖 Tactical AI Commander",
     "📂 Data",
-    "🏠 Overview",
-    "🗺️ Heatmap",
-    "📊 Analytics",
-    "🎯 Enforcement",
-    "💰 Impact",
-    "🎮 Simulator",
-    "🚑 Emergency Impact",
-    "⏳ Time-Lapse",
-    "🤖 AI Insights",
-    "📊 Compare",
 ])
 
-with tab0:
-    tab_data.render(df, stats)
-
+# Tab 1: Command Center (Overview + Heatmap + Time-Lapse)
 with tab1:
     if df is not None:
-        tab_overview.render(df)
+        tab_command_center.render(df)
     else:
-        _no_data_msg("This tab shows KPI summary cards, violation trends, and station-level metrics.")
+        _no_data_msg("This tab shows KPI overview, CIS-weighted heatmap, and 24-hour time-lapse animation.")
 
+# Tab 2: Congestion Analytics (Analytics + Impact + Emergency)
 with tab2:
     if df is not None:
-        tab_heatmap.render(df)
+        tab_congestion_analytics.render(df)
     else:
-        _no_data_msg("This tab shows an interactive CIS-weighted heatmap across Bengaluru with filter controls.")
+        _no_data_msg("This tab shows deep-dive analytics, economic cost estimates, and emergency response analysis.")
 
+# Tab 3: Intelligent Dispatch (Enforcement + Simulator + Compare)
 with tab3:
     if df is not None:
-        tab_analytics.render(df)
+        tab_intelligent_dispatch.render(df)
     else:
-        _no_data_msg("This tab shows deep-dive analytics: time patterns, vehicle breakdowns, and CIS distributions.")
+        _no_data_msg("This tab provides EPI-ranked patrol routing, what-if simulation, and period comparison.")
 
+# Tab 4: Tactical AI Commander (Gemini chat + dispatch planner + RF forecaster)
 with tab4:
     if df is not None:
-        tab_enforcement.render(df)
+        tab_tactical_commander.render_chat_panel(df)
+        st.divider()
+        tab_tactical_commander.render(df)
     else:
-        _no_data_msg("This tab ranks police stations by enforcement priority index and recommends patrol zones.")
+        _no_data_msg("This tab provides AI-powered patrol advice via Gemini, tactical dispatch planning, and ML risk forecasting.")
 
+# Tab 5: Data (full upload, cleaning, EDA panel)
 with tab5:
-    if df is not None:
-        tab_impact.render(df)
-    else:
-        _no_data_msg("This tab estimates economic impact and congestion cost of parking violations.")
-
-with tab6:
-    if df is not None:
-        tab_simulator.render(df)
-    else:
-        _no_data_msg("This tab lets you simulate what-if scenarios — e.g., 30% fewer violations in Koramangala.")
-
-with tab7:
-    if df is not None:
-        tab_emergency.render(df)
-    else:
-        _no_data_msg("This tab calculates how parking violations affect ambulance response times to hospitals.")
-
-with tab8:
-    if df is not None:
-        tab_timelapse.render(df)
-    else:
-        _no_data_msg("This tab animates 24-hour violation density patterns across the city.")
-
-with tab9:
-    if df is not None:
-        tab_ai.render(df)
-    else:
-        _no_data_msg("This tab trains a RandomForest model on your data to predict high-risk hours and detect anomalies.")
-
-with tab10:
-    tab_compare.render()
+    tab_data.render(df, stats)
 
 # ── Footer ───────────────────────────────────────────────────────────
 st.markdown(

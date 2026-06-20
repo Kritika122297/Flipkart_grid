@@ -23,5 +23,9 @@ data/_uploaded_data.csv
 .DS_Store
 Thumbs.db
 
-# Streamlit cache
+# Streamlit cache and secrets
 .streamlit/cache/
+.streamlit/secrets.toml
+
+# Environment variables
+.env
