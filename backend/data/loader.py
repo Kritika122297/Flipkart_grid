@@ -1,3 +1,4 @@
+import io
 import os
 import streamlit as st
 import pandas as pd
@@ -11,9 +12,17 @@ DEFAULT_PATHS = [
 
 
 @st.cache_data(show_spinner="⚙️ Processing records — this takes ~10 seconds…")
-def load_and_process_data(path: str):
-    """Returns (cleaned_df, cleaning_stats_dict)."""
-    df = pd.read_csv(path, low_memory=False)
+def load_and_process_data(source):
+    """Returns (cleaned_df, cleaning_stats_dict).
+
+    ``source`` may be a file-system path (str) or raw CSV bytes (bytes).
+    Accepting bytes lets callers skip disk I/O entirely, which is required
+    for thread-safe multi-user deployments.
+    """
+    if isinstance(source, bytes):
+        df = pd.read_csv(io.BytesIO(source), low_memory=False)
+    else:
+        df = pd.read_csv(source, low_memory=False)
     raw_rows = len(df)
 
     # ── datetime ──
@@ -88,6 +97,23 @@ def load_and_process_data(path: str):
         "unique_stations": int(df["police_station"].nunique()),
         "unique_locations": int(df["location"].nunique()),
     }
+
+    # ── Memory optimisation ───────────────────────────────────────────────────
+    # Downcast int64 → smallest int and float64 → float32 (saves ~50-70 % RAM).
+    for col in df.select_dtypes(include="int64").columns:
+        df[col] = pd.to_numeric(df[col], downcast="integer")
+    for col in df.select_dtypes(include="float64").columns:
+        df[col] = pd.to_numeric(df[col], downcast="float")
+
+    # Convert high-cardinality repeating strings to category (big RAM win for
+    # columns like police_station and vehicle_type that repeat thousands of times).
+    _cat_cols = [
+        "police_station", "vehicle_type", "violation_type",
+        "junction_name", "location", "day_of_week", "month_name",
+    ]
+    for col in _cat_cols:
+        if col in df.columns:
+            df[col] = df[col].astype("category")
 
     return df, stats
 

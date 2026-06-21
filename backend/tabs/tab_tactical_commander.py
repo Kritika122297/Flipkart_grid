@@ -111,7 +111,7 @@ def _call_gemini(api_key: str, system_prompt: str, user_msg: str, history: list)
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-2.0-flash",
             system_instruction=system_prompt,
         )
         gemini_history = [

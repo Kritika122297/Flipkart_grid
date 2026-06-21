@@ -31,8 +31,9 @@ if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
 st.session_state["gemini_api_key"] = _GEMINI_API_KEY
 
-# ── Session state bootstrap (auto-load demo data if available) ───────
-_DEMO_CSV = os.path.join(os.path.dirname(__file__), "data", "_uploaded_data.csv")
+# ── Session state bootstrap (auto-load shared demo data if available) ────────
+# Demo CSV is read-only shared data — safe to reference by path across sessions.
+_DEMO_CSV = os.path.join(os.path.dirname(__file__), "data", "_demo_data.csv")
 if "df" not in st.session_state:
     if os.path.exists(_DEMO_CSV):
         try:
@@ -47,19 +48,16 @@ if "df" not in st.session_state:
         st.session_state.df    = None
         st.session_state.stats = None
 
-# ── Process a pending upload (flag set by tab_data's on_change callback) ──
-# The callback deliberately does NO disk I/O (it runs in the asyncio event
-# loop thread and would block WebSocket heartbeats for a 100MB+ file write).
-# Here we run in the script thread, so blocking I/O is safe.
+# ── Process a pending upload (flag set by tab_data's on_change callback) ──────
+# Bytes are read from the UploadedFile object directly — no disk I/O, no shared
+# static file, so concurrent users cannot overwrite each other's data.
 if "_pending_upload_key" in st.session_state:
     _pending_key   = st.session_state.pop("_pending_upload_key")
     _uploaded_file = st.session_state.get("_file_uploader_widget")
     if _uploaded_file is not None:
-        _tmp_path = os.path.join(os.path.dirname(__file__), "data", "_uploaded_data.csv")
-        with open(_tmp_path, "wb") as _fh:
-            _fh.write(_uploaded_file.getbuffer())
         try:
-            _df, _stats = load_and_process_data(_tmp_path)
+            _csv_bytes = _uploaded_file.getvalue()          # bytes → hashable by st.cache_data
+            _df, _stats = load_and_process_data(_csv_bytes)
             st.session_state.df    = _df
             st.session_state.raw_df = _df.copy()
             st.session_state.stats = _stats

@@ -967,7 +967,7 @@ All scores normalized to 0–100 scale.
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
-                _mdl = genai.GenerativeModel("gemini-1.5-flash")
+                _mdl = genai.GenerativeModel("gemini-2.0-flash")
                 brief_text = _mdl.generate_content(brief_prompt).text
             except Exception as exc:
                 brief_text = f"❌ Gemini error: {exc}"

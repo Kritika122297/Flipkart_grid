@@ -39,17 +39,42 @@ def _build_distance_matrix(coords):
     return mat
 
 
+# ── Nearest-neighbor greedy fallback (no external deps) ──────────────────────
+def _solve_vrp_nn(coords, num_vehicles: int):
+    """Round-robin nearest-neighbor heuristic used when OR-Tools is unavailable."""
+    n = len(coords)
+    unvisited = list(range(1, n))
+    routes = []
+    for v in range(num_vehicles):
+        if not unvisited:
+            routes.append([0, 0])
+            continue
+        quota = max(1, (len(unvisited) + (num_vehicles - v) - 1) // (num_vehicles - v))
+        route, current = [0], 0
+        while unvisited and len(route) - 1 < quota:
+            nearest = min(unvisited, key=lambda j: _haversine(
+                coords[current][0], coords[current][1], coords[j][0], coords[j][1]
+            ))
+            route.append(nearest)
+            unvisited.remove(nearest)
+            current = nearest
+        route.append(0)
+        routes.append(route)
+    return routes
+
+
 # ── OR-Tools CVRP solver ──────────────────────────────────────────────────────
 def _solve_vrp(coords, num_vehicles: int):
     """Returns list-of-lists of node indices per vehicle."""
     try:
         from ortools.constraint_solver import pywrapcp, routing_enums_pb2
     except ImportError:
-        st.error(
-            "OR-Tools not installed. Run `pip install ortools` then restart the app.",
-            icon="❌",
+        st.info(
+            "OR-Tools not available on this server — using nearest-neighbor heuristic instead. "
+            "Results are good but not mathematically optimal.",
+            icon="ℹ️",
         )
-        return None
+        return _solve_vrp_nn(coords, num_vehicles)
 
     dist_matrix = _build_distance_matrix(coords)
     manager = pywrapcp.RoutingIndexManager(len(coords), num_vehicles, 0)
@@ -162,7 +187,7 @@ def render(df=None):
         routes = _solve_vrp(coords, num_trucks)
 
     if routes is None:
-        st.error("OR-Tools could not find a solution. Try reducing fleet size or check data.")
+        st.error("OR-Tools solver could not find a solution. Try reducing fleet size or check data.")
         return
 
     # ── Map ───────────────────────────────────────────────────────────────────
