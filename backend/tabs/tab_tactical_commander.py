@@ -100,44 +100,41 @@ def _build_system_prompt(df: pd.DataFrame) -> str:
     )
 
 
-def _call_gemini(api_key: str, system_prompt: str, user_msg: str, history: list) -> str:
+def _call_groq(api_key: str, system_prompt: str, user_msg: str, history: list) -> str:
     try:
-        import google.generativeai as genai
+        from groq import Groq
     except ImportError:
         return (
-            "❌ `google-generativeai` not installed.\n\n"
-            "Run: `pip install google-generativeai` then reload the app."
+            "❌ `groq` not installed.\n\n"
+            "Run: `pip install groq` then reload the app."
         )
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            system_instruction=system_prompt,
+        client = Groq(api_key=api_key)
+        messages = [{"role": "system", "content": system_prompt}]
+        for m in history:
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": user_msg})
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            max_tokens=1024,
         )
-        gemini_history = [
-            {
-                "role": "user" if m["role"] == "user" else "model",
-                "parts": [m["content"]],
-            }
-            for m in history
-        ]
-        chat = model.start_chat(history=gemini_history)
-        return chat.send_message(user_msg).text
+        return resp.choices[0].message.content
     except Exception as exc:
-        return f"❌ Gemini error: {exc}"
+        return f"❌ Groq error: {exc}"
 
 
 def _cached_call(api_key: str, system_prompt: str, user_msg: str, history: list) -> str:
-    if "gemini_cache" not in st.session_state:
-        st.session_state["gemini_cache"] = {}
+    if "groq_cache" not in st.session_state:
+        st.session_state["groq_cache"] = {}
 
     cache_key = user_msg.strip().lower()[:300]
-    entry = st.session_state["gemini_cache"].get(cache_key)
+    entry = st.session_state["groq_cache"].get(cache_key)
     if entry and time.time() - entry[0] < 60:
         return entry[1]
 
-    response = _call_gemini(api_key, system_prompt, user_msg, history)
-    st.session_state["gemini_cache"][cache_key] = (time.time(), response)
+    response = _call_groq(api_key, system_prompt, user_msg, history)
+    st.session_state["groq_cache"][cache_key] = (time.time(), response)
     return response
 
 
@@ -147,7 +144,7 @@ def _cached_call(api_key: str, system_prompt: str, user_msg: str, history: list)
 
 def render_chat_panel(df: pd.DataFrame) -> None:
     """Width-agnostic chat panel — safe to call from any tab context or app.py."""
-    api_key: str = st.session_state.get("gemini_api_key", "")
+    api_key: str = st.session_state.get("groq_api_key", "")
     system_prompt = _build_system_prompt(df)
 
     st.markdown(
@@ -160,7 +157,7 @@ def render_chat_panel(df: pd.DataFrame) -> None:
     # ── Demo mode ─────────────────────────────────────────────────────────────
     if not api_key:
         st.warning(
-            "Gemini API key not configured in the environment — showing demo responses."
+            "Groq API key not configured in the environment — showing demo responses."
         )
         sample_q = st.selectbox(
             "Try a sample question:",
@@ -173,7 +170,7 @@ def render_chat_panel(df: pd.DataFrame) -> None:
             st.markdown(_DEMO_QA[sample_q])
         return
 
-    # ── Live Gemini chat ───────────────────────────────────────────────────────
+    # ── Live Groq chat ─────────────────────────────────────────────────────────
     if st.button("🗑️ Clear chat history", key="clear_chat"):
         st.session_state["chat_history"] = []
         st.rerun()
@@ -189,7 +186,7 @@ def render_chat_panel(df: pd.DataFrame) -> None:
 
         history_before = st.session_state["chat_history"][:-1]
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Gemini is thinking…"):
+            with st.spinner("Groq is thinking…"):
                 response = _cached_call(api_key, system_prompt, prompt, history_before)
             st.markdown(response)
 
@@ -381,14 +378,14 @@ def _render_exec_briefing(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render(df: pd.DataFrame) -> None:
-    api_key: str  = st.session_state.get("gemini_api_key", "")
+    api_key: str  = st.session_state.get("groq_api_key", "")
     system_prompt = _build_system_prompt(df)
 
     # ── 1. ALWAYS VISIBLE: AI chat or demo ────────────────────────────────────
     st.subheader("🧠 AI Tactical Advisor")
 
     if not api_key:
-        st.warning("Demo mode — no API key. Select a sample question below.")
+        st.warning("Demo mode — no Groq API key. Select a sample question below.")
         demo_qa    = _build_demo_qa(df)
         selected_q = st.selectbox(
             "Try a sample question:", list(demo_qa.keys()), key="demo_q_render"
@@ -417,7 +414,7 @@ def render(df: pd.DataFrame) -> None:
 
             history_before = st.session_state["chat_history"][:-1]
             with st.chat_message("assistant", avatar="🤖"):
-                with st.spinner("Gemini is thinking…"):
+                with st.spinner("Groq is thinking…"):
                     response = _cached_call(
                         api_key, system_prompt, prompt, history_before
                     )

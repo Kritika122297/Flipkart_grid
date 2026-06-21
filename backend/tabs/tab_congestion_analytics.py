@@ -785,7 +785,7 @@ def _render_vehicle_hour_chart(df):
     top_types = df["vehicle_type"].value_counts().head(6).index.tolist()
     veh_hour = (
         df[df["vehicle_type"].isin(top_types)]
-        .groupby(["hour", "vehicle_type"])
+        .groupby(["hour", "vehicle_type"], observed=True)
         .size().reset_index(name="count")
     )
     palette = ["#6C63FF", "#00D2FF", "#7C3AED", "#3B82F6", "#10B981", "#F59E0B"]

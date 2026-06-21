@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Gemini API key — read once from environment, never exposed in the UI
-_GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Groq API key — read once from environment, never exposed in the UI
+_GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 from config.styles import set_page_config, inject_css
 from tabs import tab_data, tab_command_center, tab_congestion_analytics, tab_intelligent_dispatch, tab_tactical_commander, tab_cctv, tab_ortools_dispatch
 from data.loader import load_and_process_data
@@ -29,7 +29,7 @@ if "chat_panel_open" not in st.session_state:
     st.session_state["chat_panel_open"] = False
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
-st.session_state["gemini_api_key"] = _GEMINI_API_KEY
+st.session_state["groq_api_key"] = _GROQ_API_KEY
 
 # ── Session state bootstrap (auto-load shared demo data if available) ────────
 # Demo CSV is read-only shared data — safe to reference by path across sessions.
@@ -149,7 +149,7 @@ with tab4:
     else:
         no_data_state(
             "Tactical AI Commander",
-            "AI-powered patrol advice via Gemini, dispatch planning, and ML risk forecasting.",
+            "AI-powered patrol advice via Groq LLM, dispatch planning, and ML risk forecasting.",
         )
 
 # Tab 5: Data (full upload, cleaning, EDA panel)

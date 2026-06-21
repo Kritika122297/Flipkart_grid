@@ -91,14 +91,14 @@ def violation_type_counts(_df):
 @st.cache_data
 def hour_dow_pivot(_df):
     order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    pivot = _df.groupby(["hour", "day_of_week"]).size().unstack(fill_value=0)
+    pivot = _df.groupby(["hour", "day_of_week"], observed=True).size().unstack(fill_value=0)
     pivot = pivot.reindex(columns=order, fill_value=0).reindex(range(24), fill_value=0)
     return pivot
 
 
 @st.cache_data
 def enforcement_table(_df):
-    agg = _df.groupby("police_station").agg(
+    agg = _df.groupby("police_station", observed=True).agg(
         total_cis=("cis", "sum"),
         avg_cis=("cis", "mean"),
         violation_count=("id", "size"),

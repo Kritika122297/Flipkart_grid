@@ -105,7 +105,7 @@ def _anomaly_detection(_df: pd.DataFrame):
     df2 = df2.dropna(subset=["date"])
 
     daily = (
-        df2.groupby(["police_station", "date"])
+        df2.groupby(["police_station", "date"], observed=True)
         .agg(count=("cis", "size"), avg_cis=("cis", "mean"))
         .reset_index()
     )

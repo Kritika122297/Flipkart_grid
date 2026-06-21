@@ -936,7 +936,7 @@ All scores normalized to 0–100 scale.
     st.markdown(
         "<p class='section-header' style='font-size:1.15rem;'>📋 Patrol Brief Generator</p>"
         "<p class='section-sub'>One-click formal BTP briefing for the duty officer — "
-        "powered by Gemini or auto-generated from live data</p>",
+        "powered by Groq LLM or auto-generated from live data</p>",
         unsafe_allow_html=True,
     )
 
@@ -952,7 +952,7 @@ All scores normalized to 0–100 scale.
             if _anomaly_names else "No anomalies detected."
         )
 
-        api_key = st.session_state.get("gemini_key", "")
+        api_key = st.session_state.get("groq_api_key", "")
 
         if api_key:
             brief_prompt = (
@@ -965,12 +965,16 @@ All scores normalized to 0–100 scale.
                 f"Professional police tone. No bullet points."
             )
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                _mdl = genai.GenerativeModel("gemini-2.0-flash")
-                brief_text = _mdl.generate_content(brief_prompt).text
+                from groq import Groq
+                _client = Groq(api_key=api_key)
+                _resp = _client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": brief_prompt}],
+                    max_tokens=300,
+                )
+                brief_text = _resp.choices[0].message.content
             except Exception as exc:
-                brief_text = f"❌ Gemini error: {exc}"
+                brief_text = f"❌ Groq error: {exc}"
         else:
             top1_name = top5.iloc[0]["police_station"] if len(top5) > 0 else "N/A"
             top1_hrs  = top5.iloc[0]["patrol_hrs"]     if len(top5) > 0 else "N/A"
