@@ -374,7 +374,7 @@ def _build_excel_report(_df: pd.DataFrame) -> bytes:
     hotspots = pd.DataFrame()
     if "location" in df.columns and "cis" in df.columns:
         hotspots = (
-            df.groupby("location")
+            df.groupby("location", observed=True)
             .agg(violations=("cis", "size"), avg_cis=("cis", "mean"))
             .reset_index()
             .sort_values("violations", ascending=False)
@@ -386,7 +386,7 @@ def _build_excel_report(_df: pd.DataFrame) -> bytes:
     enforcement = pd.DataFrame()
     if "police_station" in df.columns and "cis" in df.columns:
         enforcement = (
-            df.groupby("police_station")
+            df.groupby("police_station", observed=True)
             .agg(violations=("cis", "size"), avg_cis=("cis", "mean"),
                  total_cis=("cis", "sum"))
             .reset_index()

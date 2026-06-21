@@ -111,7 +111,7 @@ def _anomaly_detection(_df: pd.DataFrame):
     )
 
     alerts = []
-    for stn, grp in daily.groupby("police_station"):
+    for stn, grp in daily.groupby("police_station", observed=True):
         if len(grp) < 5:
             continue
         mu = grp["count"].mean()
@@ -132,10 +132,10 @@ def _anomaly_detection(_df: pd.DataFrame):
 def _station_hour_risk(_df: pd.DataFrame):
     if "police_station" not in _df.columns or "hour" not in _df.columns:
         return pd.DataFrame()
-    top_stns = _df.groupby("police_station")["cis"].mean().nlargest(12).index
+    top_stns = _df.groupby("police_station", observed=True)["cis"].mean().nlargest(12).index
     sub = _df[_df["police_station"].isin(top_stns)]
     return (
-        sub.groupby(["police_station", "hour"])["cis"]
+        sub.groupby(["police_station", "hour"], observed=True)["cis"]
         .mean()
         .unstack(fill_value=0)
     )

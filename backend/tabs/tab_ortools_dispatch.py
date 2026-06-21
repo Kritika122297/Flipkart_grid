@@ -145,7 +145,7 @@ def render(df=None):
         return
 
     stations = (
-        df.groupby("police_station")
+        df.groupby("police_station", observed=True)
         .agg(
             lat=("latitude", "mean"),
             lon=("longitude", "mean"),

@@ -54,7 +54,7 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 @st.cache_data(show_spinner=False)
 def compute_station_risk(_df: pd.DataFrame) -> pd.DataFrame:
     agg = (
-        _df.groupby("police_station")
+        _df.groupby("police_station", observed=True)
         .agg(
             avg_cis=("cis", "mean"),
             count=("cis", "size"),
@@ -606,7 +606,7 @@ def _render_impact(df):
     st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
 
     station_agg = (
-        df.groupby("police_station")
+        df.groupby("police_station", observed=True)
         .agg(violation_count=("id", "size"), avg_severity=("violation_severity", "mean"))
         .reset_index()
     )
@@ -812,7 +812,7 @@ def _render_vehicle_hour_chart(df):
 
 def _render_anomaly_detail(df):
     stn_stats = (
-        df.groupby("police_station")["cis"]
+        df.groupby("police_station", observed=True)["cis"]
         .agg(avg_cis="mean", violation_count="count")
         .reset_index()
     )
@@ -917,7 +917,7 @@ def render(df):
     st.plotly_chart(fig_hm, use_container_width=True)
 
     # ── Anomaly count (always visible) ───────────────────────────────────────
-    stn_cis = df.groupby("police_station")["cis"].mean()
+    stn_cis = df.groupby("police_station", observed=True)["cis"].mean()
     anomaly_count = int((stn_cis > stn_cis.mean() + 2.0 * stn_cis.std()).sum())
     st.info(
         f"🔍 {anomaly_count} anomalous zones detected by AI model — expand below for details"

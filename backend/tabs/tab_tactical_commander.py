@@ -77,7 +77,7 @@ _DEMO_DISPATCH = (
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _build_system_prompt(df: pd.DataFrame) -> str:
-    top3 = df.groupby("police_station")["cis"].mean().nlargest(3)
+    top3 = df.groupby("police_station", observed=True)["cis"].mean().nlargest(3)
     peak_hour = int(df.groupby("hour")["cis"].mean().idxmax())
     total_violations = len(df)
     total_stations = df["police_station"].nunique()
@@ -257,7 +257,7 @@ def _render_rf(df: pd.DataFrame) -> None:
 # ── Data-driven demo Q&A ──────────────────────────────────────────────────────
 
 def _build_demo_qa(df: pd.DataFrame) -> dict:
-    top3     = df.groupby("police_station")["cis"].mean().nlargest(3)
+    top3     = df.groupby("police_station", observed=True)["cis"].mean().nlargest(3)
     top1     = top3.index[0]    if len(top3) > 0 else "Koramangala"
     cis1     = round(top3.iloc[0], 1) if len(top3) > 0 else 8.4
     top2     = top3.index[1]    if len(top3) > 1 else "Indiranagar"
@@ -322,7 +322,7 @@ def _render_exec_briefing(
     )
 
     if st.button("📄 Generate Briefing", key="gen_exec_brief", use_container_width=True):
-        top3    = df.groupby("police_station")["cis"].mean().nlargest(3)
+        top3    = df.groupby("police_station", observed=True)["cis"].mean().nlargest(3)
         top1    = top3.index[0] if len(top3) > 0 else "N/A"
         cis1    = round(top3.iloc[0], 1) if len(top3) > 0 else 0.0
         top2    = top3.index[1] if len(top3) > 1 else "N/A"

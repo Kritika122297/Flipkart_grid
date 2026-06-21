@@ -140,7 +140,7 @@ def _nearest_neighbor(coords: list[tuple]) -> list[int]:
 def _build_patrol_route(_df: pd.DataFrame, top_n: int = 10):
     enf = enforcement_table(_df)
     coords_df = (
-        _df.groupby("police_station")
+        _df.groupby("police_station", observed=True)
         .agg(lat=("latitude", "median"), lon=("longitude", "median"))
         .reset_index()
     )
@@ -160,7 +160,7 @@ def _build_patrol_route(_df: pd.DataFrame, top_n: int = 10):
 
 @st.cache_data(show_spinner="Computing station profiles…")
 def compute_epi(_df):
-    agg = _df.groupby("police_station").agg(
+    agg = _df.groupby("police_station", observed=True).agg(
         total_cis=("cis", "sum"),
         avg_cis=("cis", "mean"),
         count=("cis", "size"),
@@ -425,7 +425,7 @@ def _load_uploaded(raw: bytes, key: str):
 @st.cache_data(show_spinner=False)
 def _cmp_top_stations(_df: pd.DataFrame, n: int = 15):
     return (
-        _df.groupby("police_station")
+        _df.groupby("police_station", observed=True)
         .agg(violations=("cis", "size"), avg_cis=("cis", "mean"))
         .reset_index()
         .sort_values("violations", ascending=False)
@@ -573,7 +573,7 @@ def _render_enforcement(df):
     _anomaly_names: set[str] = set()
     try:
         from scipy.stats import zscore as _zscore
-        for _stn, _vals in df.groupby("police_station")["cis"]:
+        for _stn, _vals in df.groupby("police_station", observed=True)["cis"]:
             if len(_vals) >= 2 and float(_zscore(_vals.values).max()) > 2.5:
                 _anomaly_names.add(_stn)
     except Exception:
@@ -797,7 +797,7 @@ All scores normalized to 0–100 scale.
 
     # Derive station coordinates and write flagged stations to session state for the map layer
     _stn_coords = (
-        df.groupby("police_station")
+        df.groupby("police_station", observed=True)
         .agg(lat=("latitude", "median"), lon=("longitude", "median"))
         .reset_index()
     )
@@ -917,8 +917,8 @@ All scores normalized to 0–100 scale.
     )
     st.plotly_chart(fig_trend, use_container_width=True)
 
-    before_stn = df_bf.groupby("police_station")["cis"].mean().rename("cis_before")
-    after_stn  = df_af.groupby("police_station")["cis"].mean().rename("cis_after")
+    before_stn = df_bf.groupby("police_station", observed=True)["cis"].mean().rename("cis_before")
+    after_stn  = df_af.groupby("police_station", observed=True)["cis"].mean().rename("cis_after")
     stn_eff    = pd.concat([before_stn, after_stn], axis=1).dropna()
     stn_eff["effectiveness_pct"] = (
         (stn_eff["cis_before"] - stn_eff["cis_after"]) / stn_eff["cis_before"] * 100
@@ -1438,8 +1438,8 @@ def _render_effectiveness_expander(df: pd.DataFrame) -> None:
     )
     st.plotly_chart(fig_trend, use_container_width=True)
 
-    before_stn = df_bf.groupby("police_station")["cis"].mean().rename("cis_before")
-    after_stn  = df_af.groupby("police_station")["cis"].mean().rename("cis_after")
+    before_stn = df_bf.groupby("police_station", observed=True)["cis"].mean().rename("cis_before")
+    after_stn  = df_af.groupby("police_station", observed=True)["cis"].mean().rename("cis_after")
     stn_eff    = pd.concat([before_stn, after_stn], axis=1).dropna()
     stn_eff["effectiveness_pct"] = (
         (stn_eff["cis_before"] - stn_eff["cis_after"]) / stn_eff["cis_before"] * 100
@@ -1516,13 +1516,13 @@ def render(df):
     _anomaly_names_set: set[str] = set()
     try:
         from scipy.stats import zscore as _zscore
-        for _stn, _vals in df.groupby("police_station")["cis"]:
+        for _stn, _vals in df.groupby("police_station", observed=True)["cis"]:
             if len(_vals) >= 2 and float(_zscore(_vals.values).max()) > 2.5:
                 _anomaly_names_set.add(_stn)
     except Exception:
         pass
     _stn_coords = (
-        df.groupby("police_station")
+        df.groupby("police_station", observed=True)
         .agg(lat=("latitude", "median"), lon=("longitude", "median"))
         .reset_index()
     )

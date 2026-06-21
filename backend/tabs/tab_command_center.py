@@ -124,7 +124,7 @@ def _compute_epi(_df_safe):
         )
 
     agg = (
-        _df_safe.groupby("police_station")
+        _df_safe.groupby("police_station", observed=True)
         .agg(
             violation_count=("cis", "count"),
             total_cis=("cis", "sum"),
@@ -153,7 +153,7 @@ def _top_hotspots(_df_safe):
     if _df_safe.empty:
         return pd.DataFrame(columns=["location", "count", "avg_cis"])
     return (
-        _df_safe.groupby("location")
+        _df_safe.groupby("location", observed=True)
         .agg(count=("cis", "size"), avg_cis=("cis", "mean"))
         .reset_index()
         .sort_values("count", ascending=False)
@@ -164,7 +164,7 @@ def _top_hotspots(_df_safe):
 @st.cache_data(show_spinner=False)
 def _violation_breakdown(_df_vtype):
     from data.helpers import parse_violations
-    parsed = _df_vtype["violation_type"].dropna().apply(parse_violations).explode()
+    parsed = _df_vtype["violation_type"].dropna().astype(str).apply(parse_violations).explode()
     vc = parsed.dropna().value_counts().head(_TOP_VIOL_N).reset_index()
     vc.columns = ["violation_type", "count"]
     return vc
@@ -892,8 +892,8 @@ def _render_overview(df):
 
     total_violations = len(df)
     avg_cis          = df["cis"].mean()
-    worst_station    = df.groupby("police_station")["cis"].mean().idxmax()
-    worst_cis        = df.groupby("police_station")["cis"].mean().max()
+    worst_station    = df.groupby("police_station", observed=True)["cis"].mean().idxmax()
+    worst_cis        = df.groupby("police_station", observed=True)["cis"].mean().max()
     peak_h           = int(df["hour"].value_counts().idxmax())
 
     if peak_h == 0:
@@ -1253,7 +1253,7 @@ def render(df):
     with col2:
         st.metric("Avg CIS", f"{df['cis'].mean():.2f}")
     with col3:
-        st.metric("Worst zone", df.groupby("police_station")["cis"].mean().idxmax())
+        st.metric("Worst zone", df.groupby("police_station", observed=True)["cis"].mean().idxmax())
     with col4:
         peak_hr = int(df.groupby("hour")["cis"].mean().idxmax())
         suffix = "AM" if peak_hr < 12 else "PM"
