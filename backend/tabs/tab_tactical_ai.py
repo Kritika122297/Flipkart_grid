@@ -229,7 +229,7 @@ def _risk_heatmap(pivot: pd.DataFrame):
 def _anomaly_bar(anom: pd.DataFrame):
     fig = go.Figure(go.Bar(
         x=anom["z_score"].values[::-1],
-        y=(anom["police_station"] + " · " + anom["date"].astype(str)).values[::-1],
+        y=(anom["police_station"].astype(str) + " · " + anom["date"].astype(str)).values[::-1],
         orientation="h",
         marker=dict(
             color=anom["z_score"].values[::-1],
